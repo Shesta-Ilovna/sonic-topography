@@ -348,7 +348,13 @@ function neteaseApiPlugin() {
       server.middlewares.use('/api/netease/cookie', async (req: any, res: any, next: any) => {
         try {
           if (req.method === 'GET') {
-            writeJson(res, 200, { hasCookie: Boolean(browserNeteaseCookie) });
+            const account = await getNeteaseAccount(browserNeteaseCookie);
+            writeJson(res, 200, {
+              hasCookie: Boolean(browserNeteaseCookie),
+              valid: account.valid,
+              userId: account.userId,
+              nickname: account.nickname,
+            });
             return;
           }
 
@@ -363,7 +369,7 @@ function neteaseApiPlugin() {
             return;
           }
         } catch (error) {
-          writeJson(res, 500, { error: 'Unable to save Netease cookie' });
+          writeJson(res, 500, { error: 'Unable to check or save Netease cookie' });
           return;
         }
 

@@ -288,8 +288,18 @@ app.put('/api/playlists', async (req, res) => {
   }
 });
 
-app.get('/api/netease/cookie', (_req, res) => {
-  res.json({ hasCookie: Boolean(browserNeteaseCookie) });
+app.get('/api/netease/cookie', async (_req, res) => {
+  try {
+    const account = await getNeteaseAccount(browserNeteaseCookie);
+    res.json({
+      hasCookie: Boolean(browserNeteaseCookie),
+      valid: account.valid,
+      userId: account.userId,
+      nickname: account.nickname,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Unable to check Netease cookie' });
+  }
 });
 
 app.put('/api/netease/cookie', async (req, res) => {

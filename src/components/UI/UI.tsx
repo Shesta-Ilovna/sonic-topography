@@ -151,6 +151,7 @@ export function UI({ theme, onThemeChange }: UIProps) {
   const [neteaseCookie, setNeteaseCookie] = useState(readNeteaseCookieStorage);
   const [cookieStatus, setCookieStatus] = useState('');
   const [isNeteaseCookieValid, setIsNeteaseCookieValid] = useState(false);
+  const [isSyncingNeteaseCookie, setIsSyncingNeteaseCookie] = useState(false);
   const [isMobileSideNavOpen, setIsMobileSideNavOpen] = useState(false);
   const hasLoadedPlaylistsRef = useRef(false);
 
@@ -166,7 +167,13 @@ export function UI({ theme, onThemeChange }: UIProps) {
     });
   }, [playlists]);
 
-  const syncNeteaseCookie = async (cookie: string) => {
+  const syncNeteaseCookie = async (cookie: string, options: { silent?: boolean } = {}) => {
+    const normalizedCookie = cookie.trim();
+    if (normalizedCookie && !options.silent) {
+      setCookieStatus('正在校验 Cookie...');
+    }
+
+    setIsSyncingNeteaseCookie(true);
     try {
       const response = await fetch('/api/netease/cookie', {
         method: 'PUT',
@@ -176,8 +183,10 @@ export function UI({ theme, onThemeChange }: UIProps) {
       const data = await response.json();
       const valid = Boolean(data.valid);
       setIsNeteaseCookieValid(valid);
-      setCookieStatus(cookie.trim() ? (valid ? 'Cookie 可用，已开启网易云' : 'Cookie 已保存，但校验失败') : 'Cookie 已清除');
-      if (cookie.trim() && !valid) {
+      if (!options.silent) {
+        setCookieStatus(normalizedCookie ? (valid ? 'Cookie 可用，已开启网易云' : 'Cookie 已保存，但校验失败') : 'Cookie 已清除');
+      }
+      if (normalizedCookie && !valid) {
         fetch('/api/netease/cookie', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -186,16 +195,27 @@ export function UI({ theme, onThemeChange }: UIProps) {
           console.warn('Unable to clear invalid Netease proxy cookie:', error);
         });
       }
+      return valid;
     } catch (error) {
       console.warn('Unable to sync Netease cookie:', error);
-      setIsNeteaseCookieValid(false);
-      setCookieStatus('已保存到浏览器，但同步到本地代理失败');
+      if (!options.silent) {
+        setIsNeteaseCookieValid(false);
+      }
+      if (!options.silent) {
+        setCookieStatus('已保存到浏览器，但同步到本地代理失败');
+      }
+      return options.silent && isNeteaseCookieValid;
+    } finally {
+      setIsSyncingNeteaseCookie(false);
     }
   };
 
   useEffect(() => {
     const savedCookie = readNeteaseCookieStorage();
-    if (savedCookie) syncNeteaseCookie(savedCookie);
+    if (savedCookie) {
+      setNeteaseCookie(savedCookie);
+      syncNeteaseCookie(savedCookie);
+    }
   }, []);
 
 
@@ -213,32 +233,47 @@ export function UI({ theme, onThemeChange }: UIProps) {
     syncNeteaseCookie('');
   };
 
-  const ensureNeteaseCookieReady = () => {
-    if (!isNeteaseCookieValid) {
+  const ensureNeteaseCookieReady = async () => {
+    const savedCookie = readNeteaseCookieStorage();
+    if (!savedCookie.trim()) {
+      setIsNeteaseCookieValid(false);
       setNeteaseCloudStatus('请先在设置里保存可用的网易云 Cookie');
       setShowOptionsPanel(true);
-      return false;
+      return '';
     }
 
-    return true;
+    setNeteaseCookie(savedCookie);
+    const valid = await syncNeteaseCookie(savedCookie, { silent: isNeteaseCookieValid });
+    if (!valid) {
+      setNeteaseCloudStatus('Cookie 需要重新保存');
+      setShowOptionsPanel(true);
+      return '';
+    }
+
+    return savedCookie;
   };
 
   const fetchNeteaseSongs = async (url: string, emptyMessage: string) => {
-    if (!ensureNeteaseCookieReady()) return;
+    const readyCookie = await ensureNeteaseCookieReady();
+    if (!readyCookie) return;
 
     setIsLoadingNeteaseCloud(true);
     setNeteaseCloudStatus('正在加载...');
 
     try {
       const response = await fetch(url, {
-        headers: createNeteaseCookieHeaders(neteaseCookie),
+        headers: createNeteaseCookieHeaders(readyCookie),
       });
       const data = await response.json();
 
       if (!response.ok) {
-        setIsNeteaseCookieValid(false);
-        setNeteaseCloudStatus('网易云 Cookie 失效了，请重新保存');
-        setShowOptionsPanel(true);
+        if (response.status === 401) {
+          setIsNeteaseCookieValid(false);
+          setNeteaseCloudStatus('网易云 Cookie 失效了，请重新保存');
+          setShowOptionsPanel(true);
+        } else {
+          setNeteaseCloudStatus('网易云接口临时失败，请稍后再试');
+        }
         return;
       }
 
@@ -253,7 +288,7 @@ export function UI({ theme, onThemeChange }: UIProps) {
       setNeteaseCloudStatus('');
     } catch (error) {
       console.warn('Unable to load Netease cloud songs:', error);
-      setNeteaseCloudStatus('加载失败');
+      setNeteaseCloudStatus('加载失败，请稍后再试');
     } finally {
       setIsLoadingNeteaseCloud(false);
     }
@@ -275,21 +310,26 @@ export function UI({ theme, onThemeChange }: UIProps) {
     setNeteaseCloudTab('playlists');
     setNeteaseCloudSongs([]);
     setActiveNeteasePlaylistId(null);
-    if (!ensureNeteaseCookieReady()) return;
+    const readyCookie = await ensureNeteaseCookieReady();
+    if (!readyCookie) return;
 
     setIsLoadingNeteaseCloud(true);
     setNeteaseCloudStatus('正在加载歌单...');
 
     try {
       const response = await fetch('/api/netease/playlists', {
-        headers: createNeteaseCookieHeaders(neteaseCookie),
+        headers: createNeteaseCookieHeaders(readyCookie),
       });
       const data = await response.json();
 
       if (!response.ok) {
-        setIsNeteaseCookieValid(false);
-        setNeteaseCloudStatus('网易云 Cookie 失效了，请重新保存');
-        setShowOptionsPanel(true);
+        if (response.status === 401) {
+          setIsNeteaseCookieValid(false);
+          setNeteaseCloudStatus('网易云 Cookie 失效了，请重新保存');
+          setShowOptionsPanel(true);
+        } else {
+          setNeteaseCloudStatus('网易云接口临时失败，请稍后再试');
+        }
         return;
       }
 
@@ -298,7 +338,7 @@ export function UI({ theme, onThemeChange }: UIProps) {
       setNeteaseCloudStatus(cloudPlaylists.length ? '请选择一个歌单' : '没有找到网易云歌单');
     } catch (error) {
       console.warn('Unable to load Netease playlists:', error);
-      setNeteaseCloudStatus('歌单加载失败');
+      setNeteaseCloudStatus('歌单加载失败，请稍后再试');
     } finally {
       setIsLoadingNeteaseCloud(false);
     }
@@ -1201,6 +1241,7 @@ export function UI({ theme, onThemeChange }: UIProps) {
           onClearCookie={clearNeteaseCookie}
           cookieStatus={cookieStatus}
           isNeteaseCookieValid={isNeteaseCookieValid}
+          isSyncingNeteaseCookie={isSyncingNeteaseCookie}
         />
       )}
     </div>
@@ -1270,6 +1311,7 @@ function OptionsPanel({
   onClearCookie,
   cookieStatus,
   isNeteaseCookieValid,
+  isSyncingNeteaseCookie,
 }: {
   onClose: () => void;
   accentHex: string;
@@ -1279,6 +1321,7 @@ function OptionsPanel({
   onClearCookie: () => void;
   cookieStatus: string;
   isNeteaseCookieValid: boolean;
+  isSyncingNeteaseCookie: boolean;
 }) {
   const [activeTab, setActiveTab] = useState<OptionsTab>('Meteor');
   const tabs: OptionsTab[] = ['Pulse', 'Meteor', 'Cookie'];
@@ -1323,6 +1366,7 @@ function OptionsPanel({
               onClearCookie={onClearCookie}
               cookieStatus={cookieStatus}
               isNeteaseCookieValid={isNeteaseCookieValid}
+              isSyncingNeteaseCookie={isSyncingNeteaseCookie}
             />
           ) : (
             <FreqTriggerPanel key={activeTab} action={activeTab} accentHex={accentHex} />
@@ -1340,6 +1384,7 @@ function NeteaseCookiePanel({
   onClearCookie,
   cookieStatus,
   isNeteaseCookieValid,
+  isSyncingNeteaseCookie,
 }: {
   accentHex: string;
   neteaseCookie: string;
@@ -1348,6 +1393,7 @@ function NeteaseCookiePanel({
   onClearCookie: () => void;
   cookieStatus: string;
   isNeteaseCookieValid: boolean;
+  isSyncingNeteaseCookie: boolean;
 }) {
   return (
     <div className="grid gap-5">
@@ -1394,7 +1440,7 @@ function NeteaseCookiePanel({
       </div>
       <div className="flex items-center justify-between gap-3">
         <div className="text-[11px] text-white/45">
-          {cookieStatus || (neteaseCookie.trim() ? (isNeteaseCookieValid ? 'Cookie 可用，网易云入口已开启' : '已从浏览器读取 Cookie，请点击保存进行校验') : '当前没有保存 Cookie')}
+          {isSyncingNeteaseCookie ? '正在校验 Cookie...' : (cookieStatus || (neteaseCookie.trim() ? (isNeteaseCookieValid ? 'Cookie 可用，网易云入口已开启' : '已从浏览器读取 Cookie，请点击保存进行校验') : '当前没有保存 Cookie'))}
         </div>
         <div className="flex gap-2">
           <button

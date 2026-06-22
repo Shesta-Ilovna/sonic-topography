@@ -84,12 +84,15 @@ Netease cloud library flow:
 ```text
 Settings -> Netease Cookie -> save Cookie
 -> PUT /api/netease/cookie validates Cookie with music.163.com account API
+-> browser refresh reads localStorage and immediately re-syncs the saved Cookie to the local proxy
 -> UI shows left-side Netease entry only when valid is true
 -> click Netease
 -> secondary menu offers Liked, Playlists, Daily Recommendations
+-> before each cloud menu request, UI re-syncs the browser-saved Cookie so a restarted proxy can recover
 -> Liked calls /api/netease/liked
 -> Playlists calls /api/netease/playlists, then /api/netease/playlist?id=...
 -> Daily Recommendations calls /api/netease/daily-recommend
+-> only a 401 cloud response means the Cookie is invalid; 5xx/network failures stay as transient load failures
 -> proxy filters all song lists through playable URL checks
 -> user clicks a playable song
 -> loadNeteaseSong(song, currentCloudSongs) plays it with queue skip support
@@ -369,8 +372,9 @@ rg -n "TemplateCityScene|AdminPage|saveTemplateLibrary|sonic-city/templates" son
 - Netease playback URLs can be unavailable because of copyright, membership, region, or login restrictions. Lyrics may still load when audio cannot play.
 - Search filters out songs without playback URLs. The proxy checks candidates in small concurrent batches and caches search/playability results to keep repeat searches faster.
 - Netease Cookie is stored in browser `localStorage` and synced to the local proxy runtime via `/api/netease/cookie`. Search/url/lyric/cloud/daily fetches can send `X-Netease-Cookie`, but audio playback relies on the server memory copy because the browser audio element cannot attach custom headers.
+- On startup and before Netease cloud menu requests, the UI re-syncs the browser-saved Cookie to recover after a local proxy restart. Cloud menus should hide the left-side Netease entry only on explicit `401`; network errors, upstream `5xx`, empty playlists, copyright, membership, or region limits should show a transient Chinese failure/empty state instead.
 - Netease login is manual Cookie only. The Settings panel can open `music.163.com`, but browser security prevents this app from automatically reading official-site Cookies.
-- The left-side Netease entry appears only after `/api/netease/cookie` validates the Cookie. Invalid, expired, or logged-out Cookies should hide the entry and direct the user back to Settings.
+- The left-side Netease entry appears only after `/api/netease/cookie` validates the Cookie. Invalid, expired, or logged-out Cookies should hide the entry and direct the user back to Settings, but ordinary Netease API failures must not clear the valid state.
 - Cloud song plus buttons add songs to the local `Favorites` playlist, not to the upstream Netease account.
 - Pulse/Meteor trigger settings are browser-local via `sonic-topography-trigger-settings-v1`. They should persist across refreshes for the same browser but should not be written into packaged project files or shared with other users.
 - Saved playlists are file-backed in `data/playlists.json`; `data/` is ignored by git because it is user runtime data. Browser `localStorage` is kept as a fallback/migration source.

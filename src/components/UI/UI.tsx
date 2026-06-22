@@ -1135,9 +1135,9 @@ export function UI({ theme, onThemeChange }: UIProps) {
 
       {/* Player Panel */}
       {trackName !== 'No track selected' && (
-        <div className="player-panel absolute top-[40px] right-[40px] w-[300px] p-6 rounded-sm z-50 pointer-events-auto backdrop-blur-[20px] border border-white/10" style={{ background: 'rgba(255,255,255,0.03)' }}>
-          <div className="player-panel-header flex justify-between items-start mb-1">
-            <div className="player-panel-title text-[18px] font-light tracking-[0.05em] text-white truncate" title={trackName}>
+        <div className="player-panel absolute top-[30px] right-[30px] w-[280px] px-5 py-4 rounded-sm z-50 pointer-events-auto backdrop-blur-[20px] border border-white/10" style={{ background: 'rgba(255,255,255,0.03)' }}>
+          <div className="player-panel-header flex justify-between items-start">
+            <div className="player-panel-title text-[17px] leading-6 font-light tracking-[0.05em] text-white truncate" title={trackName}>
               {trackName}
             </div>
             <button 
@@ -1152,13 +1152,13 @@ export function UI({ theme, onThemeChange }: UIProps) {
               <Palette size={16} />
             </button>
           </div>
-          <div className="player-panel-meta text-[12px] opacity-50 uppercase mb-6 tracking-wider">
+          <div className="player-panel-meta text-[11px] leading-4 opacity-50 uppercase mb-3 tracking-wider">
              {isCapturing ? 'System Audio Capture' : 'Local Audio'}
              <span className="ml-2 text-[#3b82f6] text-[10px]">&bull; {themes[theme]?.name}</span>
           </div>
 
           {/* Progress bar */}
-          <div className={`player-panel-progress h-[20px] mb-5 relative flex items-end group ${isCapturing ? 'opacity-30 pointer-events-none' : ''}`}>
+          <div className={`player-panel-progress h-[14px] mb-3 relative flex items-end group ${isCapturing ? 'opacity-30 pointer-events-none' : ''}`}>
              <div className="w-full relative h-[2px] bg-white/10 group-hover:h-[4px] transition-all">
                 <div 
                    className="absolute top-0 left-0 h-full"
@@ -1184,7 +1184,7 @@ export function UI({ theme, onThemeChange }: UIProps) {
 
           <div className={`player-panel-controls flex justify-between items-center text-[10px] uppercase tracking-[0.1em] opacity-80 ${isCapturing ? 'opacity-30 pointer-events-none' : ''}`}>
              <span className="player-panel-time w-8">{formatTime(currentTime)}</span>
-             <div className="player-panel-actions flex items-center gap-4">
+             <div className="player-panel-actions flex items-center gap-3">
                 <button
                   onClick={() => playFromQueue(-1)}
                   className="hover:text-white transition-colors disabled:opacity-25 disabled:hover:text-inherit"

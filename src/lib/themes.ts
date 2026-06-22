@@ -1,5 +1,15 @@
 import * as THREE from 'three';
 
+export interface CustomThemeSettings {
+  id: string;
+  name: string;
+  background: string;
+  cool: string;
+  warm: string;
+  accent: string;
+  glowIntensity: number;
+}
+
 export interface ThemeColors {
   name: string;
   id: string;
@@ -11,6 +21,128 @@ export interface ThemeColors {
   uWarmEdge: THREE.Color;
   uRippleColor: THREE.Color;
   uGlowIntensity: number;
+}
+
+export const CUSTOM_THEME_ID = 'custom';
+export const CUSTOM_THEME_STORAGE_KEY = 'sonic-topography-custom-themes-v2';
+export const LEGACY_CUSTOM_THEME_STORAGE_KEY = 'sonic-topography-custom-theme-v1';
+export const ACTIVE_CUSTOM_THEME_STORAGE_KEY = 'sonic-topography-active-custom-theme-v1';
+export const ACTIVE_THEME_STORAGE_KEY = 'sonic-topography-active-theme-v1';
+
+export const defaultCustomThemeSettings: CustomThemeSettings = {
+  id: 'custom-default',
+  name: '自定义主题 1',
+  background: '#07111f',
+  cool: '#38bdf8',
+  warm: '#f97316',
+  accent: '#22d3ee',
+  glowIntensity: 1.1,
+};
+
+function normalizeHexColor(value: unknown, fallback: string) {
+  const color = String(value || '').trim();
+  return /^#[0-9a-fA-F]{6}$/.test(color) ? color : fallback;
+}
+
+function clampGlowIntensity(value: unknown) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return defaultCustomThemeSettings.glowIntensity;
+  return Math.max(0.4, Math.min(numeric, 2.2));
+}
+
+export function normalizeCustomThemeSettings(value: Partial<CustomThemeSettings> | null | undefined): CustomThemeSettings {
+  return {
+    id: String(value?.id || defaultCustomThemeSettings.id),
+    name: String(value?.name || defaultCustomThemeSettings.name).trim() || defaultCustomThemeSettings.name,
+    background: normalizeHexColor(value?.background, defaultCustomThemeSettings.background),
+    cool: normalizeHexColor(value?.cool, defaultCustomThemeSettings.cool),
+    warm: normalizeHexColor(value?.warm, defaultCustomThemeSettings.warm),
+    accent: normalizeHexColor(value?.accent, defaultCustomThemeSettings.accent),
+    glowIntensity: clampGlowIntensity(value?.glowIntensity),
+  };
+}
+
+function createCustomThemeId() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return `custom-${crypto.randomUUID()}`;
+  return `custom-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+export function createCustomThemePreset(seed: Partial<CustomThemeSettings> = {}): CustomThemeSettings {
+  return normalizeCustomThemeSettings({
+    ...defaultCustomThemeSettings,
+    ...seed,
+    id: seed.id || createCustomThemeId(),
+  });
+}
+
+export function readCustomThemeStorage(): CustomThemeSettings[] {
+  if (typeof window === 'undefined') return [defaultCustomThemeSettings];
+
+  try {
+    const raw = window.localStorage.getItem(CUSTOM_THEME_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed.map((preset) => normalizeCustomThemeSettings(preset));
+    }
+
+    const legacyRaw = window.localStorage.getItem(LEGACY_CUSTOM_THEME_STORAGE_KEY);
+    const legacyPreset = legacyRaw ? normalizeCustomThemeSettings(JSON.parse(legacyRaw)) : defaultCustomThemeSettings;
+    return [legacyPreset];
+  } catch (error) {
+    console.warn('Unable to read custom theme settings:', error);
+    return [defaultCustomThemeSettings];
+  }
+}
+
+export function writeCustomThemeStorage(settings: CustomThemeSettings[]) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(CUSTOM_THEME_STORAGE_KEY, JSON.stringify(settings.map((preset) => normalizeCustomThemeSettings(preset))));
+}
+
+export function readActiveCustomThemeStorage(presets: CustomThemeSettings[]) {
+  if (typeof window === 'undefined') return presets[0]?.id || defaultCustomThemeSettings.id;
+
+  const stored = window.localStorage.getItem(ACTIVE_CUSTOM_THEME_STORAGE_KEY) || '';
+  return presets.some((preset) => preset.id === stored) ? stored : (presets[0]?.id || defaultCustomThemeSettings.id);
+}
+
+export function writeActiveCustomThemeStorage(presetId: string) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(ACTIVE_CUSTOM_THEME_STORAGE_KEY, presetId);
+}
+
+export function readActiveThemeStorage() {
+  if (typeof window === 'undefined') return 'nocturnal';
+
+  const stored = window.localStorage.getItem(ACTIVE_THEME_STORAGE_KEY) || '';
+  return stored === CUSTOM_THEME_ID || Object.prototype.hasOwnProperty.call(themes, stored) ? stored : 'nocturnal';
+}
+
+export function writeActiveThemeStorage(themeId: string) {
+  if (typeof window === 'undefined') return;
+  if (themeId === CUSTOM_THEME_ID || Object.prototype.hasOwnProperty.call(themes, themeId)) {
+    window.localStorage.setItem(ACTIVE_THEME_STORAGE_KEY, themeId);
+  }
+}
+
+export function createCustomThemeColors(settings: CustomThemeSettings): ThemeColors {
+  const normalized = normalizeCustomThemeSettings(settings);
+  const base = new THREE.Color(normalized.background);
+  const cool = new THREE.Color(normalized.cool);
+  const warm = new THREE.Color(normalized.warm);
+
+  return {
+    name: 'Custom',
+    id: CUSTOM_THEME_ID,
+    uBaseColor1: base.clone(),
+    uBaseColor2: base.clone().lerp(new THREE.Color(0xffffff), 0.12),
+    uCoolCore: cool.clone(),
+    uCoolEdge: cool.clone().lerp(base, 0.35),
+    uWarmCore: warm.clone(),
+    uWarmEdge: warm.clone().lerp(base, 0.35),
+    uRippleColor: new THREE.Color(normalized.accent),
+    uGlowIntensity: normalized.glowIntensity,
+  };
 }
 
 export const themes: Record<string, ThemeColors> = {

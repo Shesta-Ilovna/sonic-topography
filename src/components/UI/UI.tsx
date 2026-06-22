@@ -1,7 +1,7 @@
 ﻿import React, { useRef, useState, useEffect } from 'react';
 import { Play, Pause, Volume2, SkipForward, SkipBack, Palette, Plus, ListMusic, Shuffle, Repeat, Trash2, Menu, X } from 'lucide-react';
 import { engine } from '../../lib/AudioEngine';
-import { themes } from '../../lib/themes';
+import { CUSTOM_THEME_ID, createCustomThemePreset, themes, type CustomThemeSettings, type ThemeColors } from '../../lib/themes';
 import { LyricsDisplay } from './LyricsDisplay';
 import { extractAudioMetadata, extractLyricsFromAudio } from '../../lib/metadata';
 import {
@@ -17,7 +17,11 @@ import {
 
 interface UIProps {
   theme: string;
+  resolvedTheme: ThemeColors;
+  customThemes: CustomThemeSettings[];
+  activeCustomThemeId: string;
   onThemeChange: (theme: string) => void;
+  onCustomThemesChange: (settings: CustomThemeSettings[], activeId?: string) => void;
 }
 
 interface NeteaseSong {
@@ -42,7 +46,7 @@ interface NeteasePlaylistSummary {
 }
 
 type PlayMode = 'sequence' | 'shuffle';
-type OptionsTab = 'Pulse' | 'Meteor' | 'Cookie';
+type OptionsTab = 'Pulse' | 'Meteor' | 'Color' | 'Cookie';
 type NeteaseCloudTab = 'liked' | 'playlists' | 'daily';
 type PendingDelete =
   | { type: 'song'; playlistId: string; songId: number; label: string }
@@ -114,7 +118,7 @@ function loadStoredTriggerSettings() {
 
 loadStoredTriggerSettings();
 
-export function UI({ theme, onThemeChange }: UIProps) {
+export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, onThemeChange, onCustomThemesChange }: UIProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const demoAudioUrl = `${baseUrl}demo.mp3`;
   const demoLyricsUrl = `${baseUrl}demo.lrc`;
@@ -759,8 +763,7 @@ export function UI({ theme, onThemeChange }: UIProps) {
   }, []);
 
  
-  const t = themes[theme] || themes['nocturnal'];
-  const accentHex = `#${t.uRippleColor.getHexString()}`;
+  const accentHex = `#${resolvedTheme.uRippleColor.getHexString()}`;
 
   return (
     <div 
@@ -1143,8 +1146,10 @@ export function UI({ theme, onThemeChange }: UIProps) {
             <button 
               onClick={() => {
                 const keys = Object.keys(themes);
-                const nextIndex = (keys.indexOf(theme) + 1) % keys.length;
-                onThemeChange(keys[nextIndex]);
+                const themeKeys = [...keys, CUSTOM_THEME_ID];
+                const currentIndex = themeKeys.indexOf(theme);
+                const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % themeKeys.length : 0;
+                onThemeChange(themeKeys[nextIndex]);
               }}
               className="player-panel-theme text-white/40 hover:text-white transition-colors"
               title="Change Theme"
@@ -1154,7 +1159,7 @@ export function UI({ theme, onThemeChange }: UIProps) {
           </div>
           <div className="player-panel-meta text-[11px] leading-4 opacity-50 uppercase mb-3 tracking-wider">
              {isCapturing ? 'System Audio Capture' : 'Local Audio'}
-             <span className="ml-2 text-[#3b82f6] text-[10px]">&bull; {themes[theme]?.name}</span>
+             <span className="ml-2 text-[#3b82f6] text-[10px]">&bull; {resolvedTheme.name}</span>
           </div>
 
           {/* Progress bar */}
@@ -1281,6 +1286,11 @@ export function UI({ theme, onThemeChange }: UIProps) {
           cookieStatus={cookieStatus}
           isNeteaseCookieValid={isNeteaseCookieValid}
           isSyncingNeteaseCookie={isSyncingNeteaseCookie}
+          theme={theme}
+          customThemes={customThemes}
+          activeCustomThemeId={activeCustomThemeId}
+          onThemeChange={onThemeChange}
+          onCustomThemesChange={onCustomThemesChange}
         />
       )}
     </div>
@@ -1351,6 +1361,11 @@ function OptionsPanel({
   cookieStatus,
   isNeteaseCookieValid,
   isSyncingNeteaseCookie,
+  theme,
+  customThemes,
+  activeCustomThemeId,
+  onThemeChange,
+  onCustomThemesChange,
 }: {
   onClose: () => void;
   accentHex: string;
@@ -1361,12 +1376,18 @@ function OptionsPanel({
   cookieStatus: string;
   isNeteaseCookieValid: boolean;
   isSyncingNeteaseCookie: boolean;
+  theme: string;
+  customThemes: CustomThemeSettings[];
+  activeCustomThemeId: string;
+  onThemeChange: (theme: string) => void;
+  onCustomThemesChange: (settings: CustomThemeSettings[], activeId?: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<OptionsTab>('Meteor');
-  const tabs: OptionsTab[] = ['Pulse', 'Meteor', 'Cookie'];
+  const tabs: OptionsTab[] = ['Pulse', 'Meteor', 'Color', 'Cookie'];
   const tabLabels: Record<OptionsTab, string> = {
     Pulse: '脉冲特效',
     Meteor: '流星特效',
+    Color: '自定义颜色',
     Cookie: '网易云 Cookie',
   };
 
@@ -1376,7 +1397,7 @@ function OptionsPanel({
           <div className="flex justify-between items-center mb-6">
              <div>
                <div className="text-xl font-light tracking-widest text-white">设置</div>
-               <div className="mt-2 text-[10px] uppercase tracking-[0.18em] text-white/35">视觉触发器与网易云 Cookie</div>
+               <div className="mt-2 text-[10px] uppercase tracking-[0.18em] text-white/35">视觉触发器、颜色与网易云 Cookie</div>
              </div>
              <button onClick={onClose} className="text-white/50 hover:text-white uppercase tracking-widest text-[10px]">关闭</button>
           </div>
@@ -1396,7 +1417,16 @@ function OptionsPanel({
             ))}
           </div>
 
-          {activeTab === 'Cookie' ? (
+          {activeTab === 'Color' ? (
+            <CustomColorPanel
+              accentHex={accentHex}
+              theme={theme}
+              customThemes={customThemes}
+              activeCustomThemeId={activeCustomThemeId}
+              onThemeChange={onThemeChange}
+              onCustomThemesChange={onCustomThemesChange}
+            />
+          ) : activeTab === 'Cookie' ? (
             <NeteaseCookiePanel
               accentHex={accentHex}
               neteaseCookie={neteaseCookie}
@@ -1411,6 +1441,172 @@ function OptionsPanel({
             <FreqTriggerPanel key={activeTab} action={activeTab} accentHex={accentHex} />
           )}
        </div>
+    </div>
+  );
+}
+
+function CustomColorPanel({
+  accentHex,
+  theme,
+  customThemes,
+  activeCustomThemeId,
+  onThemeChange,
+  onCustomThemesChange,
+}: {
+  accentHex: string;
+  theme: string;
+  customThemes: CustomThemeSettings[];
+  activeCustomThemeId: string;
+  onThemeChange: (theme: string) => void;
+  onCustomThemesChange: (settings: CustomThemeSettings[], activeId?: string) => void;
+}) {
+  const activePreset = customThemes.find((preset) => preset.id === activeCustomThemeId) || customThemes[0] || createCustomThemePreset();
+
+  const savePresets = (nextPresets: CustomThemeSettings[], nextActiveId = activePreset.id) => {
+    onCustomThemesChange(nextPresets, nextActiveId);
+  };
+
+  const updateCustomTheme = (patch: Partial<CustomThemeSettings>) => {
+    const nextPresets = customThemes.map((preset) => (
+      preset.id === activePreset.id ? { ...preset, ...patch } : preset
+    ));
+    savePresets(nextPresets, activePreset.id);
+  };
+
+  const useCustomTheme = (presetId: string) => {
+    savePresets(customThemes, presetId);
+    onThemeChange(CUSTOM_THEME_ID);
+  };
+
+  const addCustomTheme = () => {
+    const nextPreset = createCustomThemePreset({
+      ...activePreset,
+      id: undefined,
+      name: `自定义主题 ${customThemes.length + 1}`,
+    });
+    savePresets([...customThemes, nextPreset], nextPreset.id);
+  };
+
+  const deleteCustomTheme = (presetId: string) => {
+    if (customThemes.length <= 1) return;
+    const nextPresets = customThemes.filter((preset) => preset.id !== presetId);
+    const nextActiveId = activePreset.id === presetId ? nextPresets[0].id : activePreset.id;
+    savePresets(nextPresets, nextActiveId);
+  };
+
+  const colorControls: Array<{ key: keyof Pick<CustomThemeSettings, 'background' | 'cool' | 'warm' | 'accent'>; label: string; hint: string }> = [
+    { key: 'background', label: '背景色', hint: '控制页面背景、雾色和地形暗部' },
+    { key: 'cool', label: '冷色', hint: '控制亮部、冷调和高频地形发光' },
+    { key: 'warm', label: '暖色', hint: '控制暖调地形发光，也会影响流星颜色' },
+    { key: 'accent', label: '强调色', hint: '控制按钮、歌词、进度条、脉冲波纹和设置滑块' },
+  ];
+
+  return (
+    <div className="grid gap-5">
+      <div className="flex items-center justify-between gap-4 border border-white/10 bg-white/[0.03] rounded-sm p-4">
+        <div>
+          <div className="text-[12px] uppercase tracking-[0.18em] text-white/70 mb-2">自定义颜色</div>
+          <div className="text-[11px] leading-relaxed text-white/45">
+            四个内置主题保持原样。这里可以提前保存多个自定义主题，点击“使用”后才会切换。
+          </div>
+        </div>
+        <button
+          onClick={addCustomTheme}
+          className="shrink-0 px-3 py-2 rounded-sm border border-white/10 text-[10px] uppercase tracking-[0.15em] text-white/55 hover:text-white transition-colors"
+        >
+          新建主题
+        </button>
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {customThemes.map((preset) => {
+          const isActivePreset = preset.id === activePreset.id;
+          const isUsingPreset = theme === CUSTOM_THEME_ID && preset.id === activeCustomThemeId;
+          return (
+            <button
+              key={preset.id}
+              onClick={() => savePresets(customThemes, preset.id)}
+              className={`shrink-0 min-w-[120px] px-3 py-2 rounded-sm border text-left transition-colors ${
+                isActivePreset ? 'border-white/35 bg-white/10' : 'border-white/10 bg-black/20 hover:bg-white/5'
+              }`}
+            >
+              <span className="block text-[11px] text-white/75 truncate">{preset.name}</span>
+              <span className="mt-2 flex gap-1">
+                {[preset.background, preset.cool, preset.warm, preset.accent].map((color) => (
+                  <span key={color} className="h-2.5 w-5 rounded-[1px]" style={{ backgroundColor: color }} />
+                ))}
+              </span>
+              <span className="mt-2 block text-[9px] uppercase tracking-[0.14em]" style={{ color: isUsingPreset ? accentHex : 'rgba(255,255,255,0.35)' }}>
+                {isUsingPreset ? '正在使用' : '已保存'}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="grid gap-2">
+        <label className="text-[10px] uppercase tracking-[0.18em] text-white/45">主题名称</label>
+        <input
+          value={activePreset.name}
+          onChange={(event) => updateCustomTheme({ name: event.target.value })}
+          className="bg-black/30 border border-white/10 rounded-sm px-3 py-2 text-[12px] text-white outline-none focus:border-white/30"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {colorControls.map((control) => (
+          <label key={control.key} className="flex items-center gap-3 rounded-sm border border-white/10 bg-black/20 px-3 py-3">
+            <input
+              type="color"
+              value={activePreset[control.key]}
+              onChange={(event) => updateCustomTheme({ [control.key]: event.target.value } as Partial<CustomThemeSettings>)}
+              className="h-9 w-9 shrink-0 cursor-pointer rounded-sm border border-white/10 bg-transparent p-0"
+              title={control.label}
+            />
+            <span className="min-w-0">
+              <span className="block text-[12px] text-white/75">{control.label}</span>
+              <span className="block mt-1 text-[10px] leading-relaxed text-white/35">{control.hint}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+
+      <div className="rounded-sm border border-white/10 bg-black/20 px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[12px] text-white/75">发光强度</div>
+            <div className="mt-1 text-[10px] text-white/35">控制地形整体发光亮度</div>
+          </div>
+          <div className="text-[12px]" style={{ color: accentHex }}>{activePreset.glowIntensity.toFixed(2)}</div>
+        </div>
+        <input
+          type="range"
+          min="0.4"
+          max="2.2"
+          step="0.05"
+          value={activePreset.glowIntensity}
+          onChange={(event) => updateCustomTheme({ glowIntensity: Number(event.target.value) })}
+          className="mt-3 w-full accent-current h-1"
+          style={{ accentColor: accentHex }}
+        />
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <button
+          onClick={() => deleteCustomTheme(activePreset.id)}
+          disabled={customThemes.length <= 1}
+          className="px-3 py-2 rounded-sm border border-white/10 text-[10px] uppercase tracking-[0.15em] text-white/35 hover:text-white disabled:opacity-25 disabled:hover:text-white/35 transition-colors"
+        >
+          删除当前
+        </button>
+        <button
+          onClick={() => useCustomTheme(activePreset.id)}
+          className="px-3 py-2 rounded-sm text-[10px] uppercase tracking-[0.15em] text-black"
+          style={{ backgroundColor: accentHex }}
+        >
+          使用这个主题
+        </button>
+      </div>
     </div>
   );
 }

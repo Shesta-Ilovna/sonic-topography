@@ -9,6 +9,7 @@ Last full verification commit: `unknown`
 | Goal | Main files | Tests | Verification |
 | --- | --- | --- | --- |
 | Change player, Demo, upload, or lyrics display | `src/components/UI/UI.tsx` | No automated tests yet | `npm run lint`; `npm run build` |
+| Change visual themes or custom colors | `src/lib/themes.ts`; `src/App.tsx`; `src/components/UI/UI.tsx`; `src/components/AudioVisualizer/MapScene.tsx`; `src/components/AudioVisualizer/CustomShaderMaterial.ts` | No automated tests yet | `npm run lint`; `npm run build`; browser Settings -> Custom Color QA |
 | Change Netease search/import, browser Cookie, cloud library, or daily recommendations | `src/components/UI/UI.tsx`; `src/lib/neteaseCookie.ts`; `vite.config.ts`; `local-server.mjs`; `package.json` | `src/lib/neteaseCookie.test.ts` | `npx tsx src/lib/neteaseCookie.test.ts`; `npm run lint`; `npm run build`; `/api/netease/cookie`, `/api/netease/search`, `/api/netease/liked`, `/api/netease/playlists`, and `/api/netease/daily-recommend` smoke tests |
 | Change one-click packaged startup | `local-server.mjs`; `start-sonic-topography.bat`; `package.json` | No automated tests yet | `npm run build`; `npm start`; `http://127.0.0.1:4173` smoke test |
 | Package Wallpaper Engine web wallpaper | `package.json`; `scripts/prepare-wallpaper.mjs`; `src/lib/AudioEngine.ts`; `src/components/UI/UI.tsx` | No automated tests yet | `npm run lint`; `npm run build:wallpaper`; import `dist-wallpaper/index.html` in Wallpaper Engine |
@@ -135,6 +136,23 @@ src/components/UI/UI.tsx loads src/lib/triggerSettings.ts
 -> refresh keeps the same browser settings; a packaged copy opened by another user starts with that user's own browser storage
 ```
 
+Theme flow:
+
+```text
+src/lib/themes.ts defines the four built-in themes and keeps their exact color values stable
+-> src/App.tsx stores the active theme id
+-> active theme id persists in browser localStorage key sonic-topography-active-theme-v1
+-> built-in theme id resolves directly from themes
+-> custom theme presets read browser localStorage key sonic-topography-custom-themes-v2
+-> active custom preset id persists in browser localStorage key sonic-topography-active-custom-theme-v1
+-> custom presets use background/cool/warm/accent colors plus glow intensity
+-> the player palette button cycles through the built-in themes plus the active custom preset
+-> createCustomThemeColors() derives the shader colors from those simple controls
+-> App passes resolvedTheme to UI and MapScene
+-> UI uses resolvedTheme.uRippleColor as the accent for buttons, sliders, progress, lyrics, stats, Pulse controls, and Meteor controls
+-> MapScene lerps shader uniforms and meteor color toward resolvedTheme
+```
+
 Wallpaper Engine flow:
 
 ```text
@@ -174,6 +192,10 @@ Normalizes multiline copied Netease Cookie strings, defines the browser storage 
 `src/lib/triggerSettings.ts`
 
 Normalizes and persists Pulse/Meteor trigger panel settings in browser `localStorage`. This keeps trigger preferences per browser/user without writing them into project config or packaged files.
+
+`src/lib/themes.ts`
+
+Defines the four built-in visual themes, custom theme preset browser storage keys, and helpers for normalizing and deriving custom theme shader colors. Built-in theme color values should remain unchanged unless the request explicitly asks to redesign them.
 
 `vite.config.ts`
 

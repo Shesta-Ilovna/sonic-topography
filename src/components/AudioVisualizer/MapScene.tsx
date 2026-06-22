@@ -4,11 +4,11 @@ import * as THREE from 'three';
 import { useRef, useMemo, useState, useLayoutEffect, useEffect } from 'react';
 import { MapShaderMaterial } from './CustomShaderMaterial';
 import { engine } from '../../lib/AudioEngine';
-import { themes } from '../../lib/themes';
+import { themes, type ThemeColors } from '../../lib/themes';
 
 extend({ MapShaderMaterial });
 
-export function MapScene({ theme = 'nocturnal' }: { theme?: string }) {
+export function MapScene({ themeColors = themes['nocturnal'] }: { themeColors?: ThemeColors }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const materialRef = useRef<any>(null);
   const { clock } = useThree();
@@ -149,13 +149,13 @@ export function MapScene({ theme = 'nocturnal' }: { theme?: string }) {
           }
        }
     };
-  }, [theme]);
+  }, [themeColors]);
 
   useFrame((state, delta) => {
     if (!materialRef.current) return;
     const mat = materialRef.current;
     const data = engine.getAudioData();
-    const t = themes[theme] || themes['nocturnal'];
+    const t = themeColors;
 
     // Smoothly transition colors
     const lerpSpeed = 3.0 * delta;
@@ -280,7 +280,7 @@ export function MapScene({ theme = 'nocturnal' }: { theme?: string }) {
     addRipple(e.point.x, e.point.z, strength);
   };
 
-  const t = themes[theme] || themes['nocturnal'];
+  const t = themeColors;
 
   return (
     <>

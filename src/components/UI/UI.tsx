@@ -155,6 +155,46 @@ export function UI({ theme, onThemeChange }: UIProps) {
   const [isMobileSideNavOpen, setIsMobileSideNavOpen] = useState(false);
   const hasLoadedPlaylistsRef = useRef(false);
 
+  const closeFloatingPanels = () => {
+    setShowOptionsPanel(false);
+    setShowSearchPanel(false);
+    setShowNeteasePanel(false);
+    setShowPlaylistPanel(false);
+    setIsMobileSideNavOpen(false);
+  };
+
+  const openOptionsPanel = () => {
+    setShowSearchPanel(false);
+    setShowNeteasePanel(false);
+    setShowPlaylistPanel(false);
+    setShowOptionsPanel(true);
+    setIsMobileSideNavOpen(false);
+  };
+
+  const openSearchPanel = () => {
+    setShowOptionsPanel(false);
+    setShowNeteasePanel(false);
+    setShowPlaylistPanel(false);
+    setShowSearchPanel(true);
+    setIsMobileSideNavOpen(false);
+  };
+
+  const openNeteasePanel = () => {
+    setShowOptionsPanel(false);
+    setShowSearchPanel(false);
+    setShowPlaylistPanel(false);
+    setShowNeteasePanel(true);
+    setIsMobileSideNavOpen(false);
+  };
+
+  const openPlaylistPanel = () => {
+    setShowOptionsPanel(false);
+    setShowSearchPanel(false);
+    setShowNeteasePanel(false);
+    setShowPlaylistPanel(true);
+    setIsMobileSideNavOpen(false);
+  };
+
   useEffect(() => {
     if (!hasLoadedPlaylistsRef.current) return;
     window.localStorage.setItem(PLAYLIST_STORAGE_KEY, JSON.stringify(playlists));
@@ -238,7 +278,7 @@ export function UI({ theme, onThemeChange }: UIProps) {
     if (!savedCookie.trim()) {
       setIsNeteaseCookieValid(false);
       setNeteaseCloudStatus('请先在设置里保存可用的网易云 Cookie');
-      setShowOptionsPanel(true);
+      openOptionsPanel();
       return '';
     }
 
@@ -246,7 +286,7 @@ export function UI({ theme, onThemeChange }: UIProps) {
     const valid = await syncNeteaseCookie(savedCookie, { silent: isNeteaseCookieValid });
     if (!valid) {
       setNeteaseCloudStatus('Cookie 需要重新保存');
-      setShowOptionsPanel(true);
+      openOptionsPanel();
       return '';
     }
 
@@ -270,7 +310,7 @@ export function UI({ theme, onThemeChange }: UIProps) {
         if (response.status === 401) {
           setIsNeteaseCookieValid(false);
           setNeteaseCloudStatus('网易云 Cookie 失效了，请重新保存');
-          setShowOptionsPanel(true);
+          openOptionsPanel();
         } else {
           setNeteaseCloudStatus('网易云接口临时失败，请稍后再试');
         }
@@ -326,7 +366,7 @@ export function UI({ theme, onThemeChange }: UIProps) {
         if (response.status === 401) {
           setIsNeteaseCookieValid(false);
           setNeteaseCloudStatus('网易云 Cookie 失效了，请重新保存');
-          setShowOptionsPanel(true);
+          openOptionsPanel();
         } else {
           setNeteaseCloudStatus('网易云接口临时失败，请稍后再试');
         }
@@ -739,19 +779,18 @@ export function UI({ theme, onThemeChange }: UIProps) {
       {/* Sidebar Left */}
       <div className={`side-nav-trigger absolute left-0 top-0 h-full w-[20px] z-[60] group hover:w-[60px] transition-all pointer-events-auto ${isMobileSideNavOpen ? 'is-mobile-open' : ''}`}>
         <aside className={`side-nav-panel absolute left-0 top-0 w-[60px] h-full border-r border-white/5 flex flex-col items-center py-6 pointer-events-auto ${isMobileSideNavOpen ? 'translate-x-0' : '-translate-x-full'} group-hover:translate-x-0 transition-transform duration-300`} style={{ background: 'rgba(2,4,10,0.8)' }}>
-          <button className="uppercase tracking-[0.2em] text-[10px] mb-12 opacity-100 transition-opacity cursor-pointer" style={{ writingMode: 'vertical-rl', color: accentHex }}>Visualizer</button>
-          <button onClick={() => { setShowOptionsPanel(true); setIsMobileSideNavOpen(false); }} className="uppercase tracking-[0.2em] text-[10px] mb-12 opacity-40 hover:opacity-100 transition-opacity cursor-pointer flex items-center justify-center gap-2" style={{ writingMode: 'vertical-rl' }}>
+          <button onClick={closeFloatingPanels} className="uppercase tracking-[0.2em] text-[10px] mb-12 opacity-100 transition-opacity cursor-pointer" style={{ writingMode: 'vertical-rl', color: accentHex }}>Visualizer</button>
+          <button onClick={openOptionsPanel} className="uppercase tracking-[0.2em] text-[10px] mb-12 opacity-40 hover:opacity-100 transition-opacity cursor-pointer flex items-center justify-center gap-2" style={{ writingMode: 'vertical-rl' }}>
             设置
           </button>
-          <button onClick={() => { setShowSearchPanel(true); setIsMobileSideNavOpen(false); }} className="uppercase tracking-[0.2em] text-[10px] mb-12 opacity-40 hover:opacity-100 transition-opacity cursor-pointer flex items-center justify-center gap-2" style={{ writingMode: 'vertical-rl' }}>
+          <button onClick={openSearchPanel} className="uppercase tracking-[0.2em] text-[10px] mb-12 opacity-40 hover:opacity-100 transition-opacity cursor-pointer flex items-center justify-center gap-2" style={{ writingMode: 'vertical-rl' }}>
             Search
           </button>
           {isNeteaseCookieValid && (
             <button
               onClick={() => {
-                setShowNeteasePanel(true);
+                openNeteasePanel();
                 loadDailyRecommendations();
-                setIsMobileSideNavOpen(false);
               }}
               className="uppercase tracking-[0.2em] text-[10px] mb-12 opacity-40 hover:opacity-100 transition-opacity cursor-pointer flex items-center justify-center gap-2"
               style={{ writingMode: 'vertical-rl' }}
@@ -759,7 +798,7 @@ export function UI({ theme, onThemeChange }: UIProps) {
               网易云
             </button>
           )}
-          <button onClick={() => { setShowPlaylistPanel(true); setIsMobileSideNavOpen(false); }} className="uppercase tracking-[0.2em] text-[10px] mb-12 opacity-40 hover:opacity-100 transition-opacity cursor-pointer flex items-center justify-center gap-2" style={{ writingMode: 'vertical-rl' }}>
+          <button onClick={openPlaylistPanel} className="uppercase tracking-[0.2em] text-[10px] mb-12 opacity-40 hover:opacity-100 transition-opacity cursor-pointer flex items-center justify-center gap-2" style={{ writingMode: 'vertical-rl' }}>
             Playlist
           </button>
           

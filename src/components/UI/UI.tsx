@@ -453,7 +453,10 @@ export function UI({ theme, onThemeChange }: UIProps) {
     setSearchResults([]);
 
     try {
-      const response = await fetch(`/api/netease/search?keywords=${encodeURIComponent(keywords)}&limit=30`, {
+      const searchUrl = requestCookie
+        ? `/api/netease/search?keywords=${encodeURIComponent(keywords)}&limit=30`
+        : `/api/netease/search?keywords=${encodeURIComponent(keywords)}`;
+      const response = await fetch(searchUrl, {
         headers: createNeteaseCookieHeaders(requestCookie),
       });
       if (!response.ok) throw new Error('Search request failed');

@@ -320,7 +320,8 @@ app.get('/api/netease/search', async (req, res) => {
       return;
     }
 
-    const cacheKey = `${keywords.toLowerCase()}::${resultLimit}::${normalizeNeteaseCookie(cookie)}`;
+    const searchMode = hasCookie ? `cookie::${normalizeNeteaseCookie(cookie)}` : 'anonymous-baseline';
+    const cacheKey = `${keywords.toLowerCase()}::${resultLimit}::${searchMode}`;
     const cached = searchCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       res.json({ ...cached.payload, cached: true });

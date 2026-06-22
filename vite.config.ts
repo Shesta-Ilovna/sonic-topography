@@ -321,7 +321,8 @@ function neteaseApiPlugin() {
             return;
           }
 
-          const cacheKey = `${keywords.toLowerCase()}::${resultLimit}::${normalizeNeteaseCookie(cookie)}`;
+          const searchMode = hasCookie ? `cookie::${normalizeNeteaseCookie(cookie)}` : 'anonymous-baseline';
+          const cacheKey = `${keywords.toLowerCase()}::${resultLimit}::${searchMode}`;
           const cached = searchCache.get(cacheKey);
           if (cached && cached.expiresAt > Date.now()) {
             writeJson(res, 200, { ...cached.payload, cached: true });

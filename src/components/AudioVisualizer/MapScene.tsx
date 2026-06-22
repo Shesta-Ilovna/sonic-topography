@@ -5,10 +5,17 @@ import { useRef, useMemo, useState, useLayoutEffect, useEffect } from 'react';
 import { MapShaderMaterial } from './CustomShaderMaterial';
 import { engine } from '../../lib/AudioEngine';
 import { themes, type ThemeColors } from '../../lib/themes';
+import { applyGroundEqValue, readGroundEqSettingsStorage, type StoredGroundEqSettings } from '../../lib/groundEqSettings';
 
 extend({ MapShaderMaterial });
 
-export function MapScene({ themeColors = themes['nocturnal'] }: { themeColors?: ThemeColors }) {
+export function MapScene({
+  themeColors = themes['nocturnal'],
+  groundEqSettings = readGroundEqSettingsStorage(),
+}: {
+  themeColors?: ThemeColors;
+  groundEqSettings?: StoredGroundEqSettings;
+}) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const materialRef = useRef<any>(null);
   const { clock } = useThree();
@@ -156,6 +163,17 @@ export function MapScene({ themeColors = themes['nocturnal'] }: { themeColors?: 
     const mat = materialRef.current;
     const data = engine.getAudioData();
     const t = themeColors;
+    const eqCurve = groundEqSettings.curve;
+    const eqSubBass = applyGroundEqValue(data.subBass, eqCurve, 0.00);
+    const eqBass = applyGroundEqValue(data.bass, eqCurve, 0.12);
+    const eqLowMid = applyGroundEqValue(data.lowMid, eqCurve, 0.28);
+    const eqMid = applyGroundEqValue(data.mid, eqCurve, 0.42);
+    const eqHighMid = applyGroundEqValue(data.highMid, eqCurve, 0.58);
+    const eqPresence = applyGroundEqValue(data.presence, eqCurve, 0.72);
+    const eqBrilliance = applyGroundEqValue(data.brilliance, eqCurve, 0.86);
+    const eqAir = applyGroundEqValue(data.air, eqCurve, 1.00);
+    const eqAverage = eqCurve.reduce((sum, value) => sum + value, 0) / Math.max(1, eqCurve.length);
+    const eqEnergy = applyGroundEqValue(data.energy, eqCurve, (eqAverage / 100));
 
     // Smoothly transition colors
     const lerpSpeed = 3.0 * delta;
@@ -173,20 +191,20 @@ export function MapScene({ themeColors = themes['nocturnal'] }: { themeColors?: 
     }
 
     mat.uTime = state.clock.getElapsedTime();
-    mat.uBass = data.bass;
-    mat.uMid = data.mid;
+    mat.uBass = eqBass;
+    mat.uMid = eqMid;
     mat.uTreble = data.treble;
-    mat.uEnergy = data.energy;
+    mat.uEnergy = eqEnergy;
     
-    mat.uSubBass = data.subBass;
-    mat.uLowMid = data.lowMid;
-    mat.uHighMid = data.highMid;
-    mat.uPresence = data.presence;
-    mat.uBrilliance = data.brilliance;
-    mat.uAir = data.air;
+    mat.uSubBass = eqSubBass;
+    mat.uLowMid = eqLowMid;
+    mat.uHighMid = eqHighMid;
+    mat.uPresence = eqPresence;
+    mat.uBrilliance = eqBrilliance;
+    mat.uAir = eqAir;
 
-    mat.uWarmth = data.warmth;
-    mat.uBrightness = data.brightness;
+    mat.uWarmth = Math.max(0, Math.min(1, (eqSubBass + eqBass + eqLowMid + eqMid) / Math.max(0.001, eqSubBass + eqBass + eqLowMid + eqMid + eqPresence + eqBrilliance + eqAir)));
+    mat.uBrightness = Math.max(0, Math.min(1, (eqPresence + eqBrilliance + eqAir) / Math.max(0.001, eqSubBass + eqBass + eqLowMid + eqMid + eqPresence + eqBrilliance + eqAir)));
     mat.uSharpness = data.sharpness;
     mat.uSmoothness = data.smoothness;
     mat.uDensity = data.density;

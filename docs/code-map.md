@@ -10,6 +10,7 @@ Last full verification commit: `unknown`
 | --- | --- | --- | --- |
 | Change player, Demo, upload, or lyrics display | `src/components/UI/UI.tsx` | No automated tests yet | `npm run lint`; `npm run build` |
 | Change visual themes or custom colors | `src/lib/themes.ts`; `src/App.tsx`; `src/components/UI/UI.tsx`; `src/components/AudioVisualizer/MapScene.tsx`; `src/components/AudioVisualizer/CustomShaderMaterial.ts` | No automated tests yet | `npm run lint`; `npm run build`; browser Settings -> Custom Color QA |
+| Change ground EQ visual response | `src/lib/groundEqSettings.ts`; `src/components/UI/UI.tsx`; `src/components/AudioVisualizer/MapScene.tsx`; `src/components/AudioVisualizer/CustomShaderMaterial.ts` | No automated tests yet | `npm run lint`; `npm run build`; browser Settings -> Ground EQ QA |
 | Change Netease search/import, browser Cookie, cloud library, or daily recommendations | `src/components/UI/UI.tsx`; `src/lib/neteaseCookie.ts`; `vite.config.ts`; `local-server.mjs`; `package.json` | `src/lib/neteaseCookie.test.ts` | `npx tsx src/lib/neteaseCookie.test.ts`; `npm run lint`; `npm run build`; `/api/netease/cookie`, `/api/netease/search`, `/api/netease/liked`, `/api/netease/playlists`, and `/api/netease/daily-recommend` smoke tests |
 | Change one-click packaged startup | `local-server.mjs`; `start-sonic-topography.bat`; `package.json` | No automated tests yet | `npm run build`; `npm start`; `http://127.0.0.1:4173` smoke test |
 | Package Wallpaper Engine web wallpaper | `package.json`; `scripts/prepare-wallpaper.mjs`; `src/lib/AudioEngine.ts`; `src/components/UI/UI.tsx` | No automated tests yet | `npm run lint`; `npm run build:wallpaper`; import `dist-wallpaper/index.html` in Wallpaper Engine |
@@ -136,6 +137,18 @@ src/components/UI/UI.tsx loads src/lib/triggerSettings.ts
 -> refresh keeps the same browser settings; a packaged copy opened by another user starts with that user's own browser storage
 ```
 
+Ground EQ flow:
+
+```text
+Settings -> Ground EQ edits a 16-point curve from low frequency to high frequency
+-> src/lib/groundEqSettings.ts stores the curve in browser localStorage key sonic-topography-ground-eq-v1
+-> src/App.tsx passes groundEqSettings to UI and MapScene
+-> UI Ground EQ canvas reads engine.getRawFrequencyData() for a live spectrum background and labels the 8 visual frequency segments
+-> MapScene calls engine.getAudioData(), then applies visual EQ before shader uniforms
+-> CustomShaderMaterial receives adjusted subBass/bass/lowMid/mid/highMid/presence/brilliance/air/energy values
+-> Pulse/Meteor trigger evaluation and raw AudioEngine output stay unchanged
+```
+
 Theme flow:
 
 ```text
@@ -194,6 +207,10 @@ Normalizes multiline copied Netease Cookie strings, defines the browser storage 
 `src/lib/triggerSettings.ts`
 
 Normalizes and persists Pulse/Meteor trigger panel settings in browser `localStorage`. This keeps trigger preferences per browser/user without writing them into project config or packaged files.
+
+`src/lib/groundEqSettings.ts`
+
+Normalizes and persists the 16-point Ground EQ curve in browser `localStorage`. This is a visual-only response curve applied in `MapScene` before shader uniforms, not a real audio EQ and not part of Pulse/Meteor trigger evaluation. The Ground EQ settings canvas in `UI.tsx` may read `engine.getRawFrequencyData()` to draw a live spectrum guide; it should not call `engine.getAudioData()` because that belongs to the terrain render loop.
 
 `src/lib/themes.ts`
 

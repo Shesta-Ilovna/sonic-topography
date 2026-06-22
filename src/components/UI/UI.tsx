@@ -2,6 +2,13 @@
 import { Play, Pause, Volume2, SkipForward, SkipBack, Palette, Plus, ListMusic, Shuffle, Repeat, Trash2, Menu, X } from 'lucide-react';
 import { engine } from '../../lib/AudioEngine';
 import { BUILT_IN_THEME_IDS, CUSTOM_THEME_ID, createCustomThemePreset, themes, type CustomThemeSettings, type ThemeColors, type ThemeRotationSettings } from '../../lib/themes';
+import {
+  DEFAULT_GROUND_EQ_VALUE,
+  GROUND_EQ_POINT_COUNT,
+  defaultGroundEqCurve,
+  readGroundEqCurveValue,
+  type StoredGroundEqSettings,
+} from '../../lib/groundEqSettings';
 import { LyricsDisplay } from './LyricsDisplay';
 import { extractAudioMetadata, extractLyricsFromAudio } from '../../lib/metadata';
 import {
@@ -21,9 +28,11 @@ interface UIProps {
   customThemes: CustomThemeSettings[];
   activeCustomThemeId: string;
   themeRotation: ThemeRotationSettings;
+  groundEqSettings: StoredGroundEqSettings;
   onThemeChange: (theme: string) => void;
   onCustomThemesChange: (settings: CustomThemeSettings[], activeId?: string) => void;
   onThemeRotationChange: (settings: ThemeRotationSettings) => void;
+  onGroundEqSettingsChange: (settings: StoredGroundEqSettings) => void;
 }
 
 interface NeteaseSong {
@@ -48,7 +57,7 @@ interface NeteasePlaylistSummary {
 }
 
 type PlayMode = 'sequence' | 'shuffle';
-type OptionsTab = 'Pulse' | 'Meteor' | 'Color' | 'Cookie';
+type OptionsTab = 'Pulse' | 'Meteor' | 'GroundEq' | 'Color' | 'Cookie';
 type NeteaseCloudTab = 'liked' | 'playlists' | 'daily';
 type PendingDelete =
   | { type: 'song'; playlistId: string; songId: number; label: string }
@@ -120,7 +129,7 @@ function loadStoredTriggerSettings() {
 
 loadStoredTriggerSettings();
 
-export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, themeRotation, onThemeChange, onCustomThemesChange, onThemeRotationChange }: UIProps) {
+export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, themeRotation, groundEqSettings, onThemeChange, onCustomThemesChange, onThemeRotationChange, onGroundEqSettingsChange }: UIProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const demoAudioUrl = `${baseUrl}demo.mp3`;
   const demoLyricsUrl = `${baseUrl}demo.lrc`;
@@ -1292,9 +1301,11 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
           customThemes={customThemes}
           activeCustomThemeId={activeCustomThemeId}
           themeRotation={themeRotation}
+          groundEqSettings={groundEqSettings}
           onThemeChange={onThemeChange}
           onCustomThemesChange={onCustomThemesChange}
           onThemeRotationChange={onThemeRotationChange}
+          onGroundEqSettingsChange={onGroundEqSettingsChange}
         />
       )}
     </div>
@@ -1369,9 +1380,11 @@ function OptionsPanel({
   customThemes,
   activeCustomThemeId,
   themeRotation,
+  groundEqSettings,
   onThemeChange,
   onCustomThemesChange,
   onThemeRotationChange,
+  onGroundEqSettingsChange,
 }: {
   onClose: () => void;
   accentHex: string;
@@ -1386,22 +1399,31 @@ function OptionsPanel({
   customThemes: CustomThemeSettings[];
   activeCustomThemeId: string;
   themeRotation: ThemeRotationSettings;
+  groundEqSettings: StoredGroundEqSettings;
   onThemeChange: (theme: string) => void;
   onCustomThemesChange: (settings: CustomThemeSettings[], activeId?: string) => void;
   onThemeRotationChange: (settings: ThemeRotationSettings) => void;
+  onGroundEqSettingsChange: (settings: StoredGroundEqSettings) => void;
 }) {
   const [activeTab, setActiveTab] = useState<OptionsTab>('Meteor');
-  const tabs: OptionsTab[] = ['Pulse', 'Meteor', 'Color', 'Cookie'];
+  const tabs: OptionsTab[] = ['Pulse', 'Meteor', 'GroundEq', 'Color', 'Cookie'];
   const tabLabels: Record<OptionsTab, string> = {
     Pulse: '脉冲特效',
     Meteor: '流星特效',
+    GroundEq: '地面 EQ',
     Color: '自定义颜色',
     Cookie: '网易云 Cookie',
   };
 
   return (
-    <div className="absolute inset-0 z-[100] backdrop-blur-md bg-black/50 flex flex-col items-center justify-center pointer-events-auto">
-       <div className="w-[80vw] max-w-[840px] max-h-[86vh] overflow-y-auto border border-white/10 rounded-sm p-8 transform transition-all shadow-2xl" style={{ background: 'rgba(5, 10, 15, 0.95)' }}>
+    <div className="absolute top-[40px] left-[100px] z-[100] pointer-events-auto">
+       <div
+         className="w-[min(840px,calc(100vw-140px))] max-h-[86vh] overflow-y-auto border border-white/10 rounded-sm p-8 transform transition-all shadow-2xl"
+         style={{
+           background: 'rgba(5,10,15,0.94)',
+           boxShadow: '0 24px 80px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.08)',
+         }}
+       >
           <div className="flex justify-between items-center mb-6">
              <div>
                <div className="text-xl font-light tracking-widest text-white">设置</div>
@@ -1425,7 +1447,13 @@ function OptionsPanel({
             ))}
           </div>
 
-          {activeTab === 'Color' ? (
+          {activeTab === 'GroundEq' ? (
+            <GroundEqPanel
+              accentHex={accentHex}
+              groundEqSettings={groundEqSettings}
+              onGroundEqSettingsChange={onGroundEqSettingsChange}
+            />
+          ) : activeTab === 'Color' ? (
             <CustomColorPanel
               accentHex={accentHex}
               theme={theme}
@@ -1451,6 +1479,271 @@ function OptionsPanel({
             <FreqTriggerPanel key={activeTab} action={activeTab} accentHex={accentHex} />
           )}
        </div>
+    </div>
+  );
+}
+
+function GroundEqPanel({
+  accentHex,
+  groundEqSettings,
+  onGroundEqSettingsChange,
+}: {
+  accentHex: string;
+  groundEqSettings: StoredGroundEqSettings;
+  onGroundEqSettingsChange: (settings: StoredGroundEqSettings) => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const isDragging = useRef(false);
+  const animationFrameRef = useRef<number | null>(null);
+  const draftCurve = useRef<number[]>(groundEqSettings.curve);
+  const [curve, setCurve] = useState(groundEqSettings.curve);
+
+  useEffect(() => {
+    draftCurve.current = groundEqSettings.curve;
+    setCurve(groundEqSettings.curve);
+  }, [groundEqSettings.curve]);
+
+  const commitCurve = (nextCurve: number[]) => {
+    draftCurve.current = nextCurve;
+    setCurve(nextCurve);
+    onGroundEqSettingsChange({ curve: nextCurve });
+  };
+
+  const resetCurve = () => {
+    commitCurve([...defaultGroundEqCurve]);
+  };
+
+  const updateCurveFromEvent = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    const y = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+    const targetIndex = Math.round(x * (GROUND_EQ_POINT_COUNT - 1));
+    const nextValue = Math.round((1 - y) * 100);
+    const nextCurve = draftCurve.current.map((value, index) => (
+      index === targetIndex ? nextValue : value
+    ));
+    commitCurve(nextCurve);
+  };
+
+  const bandNotes = [
+    { unit: 0.00, marker: '1', short: '超低', color: '#6ee7ff', label: '超低频 / Sub Bass', target: '拖第 1 段', text: '影响中心最大块的抬升，鼓点、低沉冲击越明显，地面中间越会顶起来。' },
+    { unit: 0.12, marker: '2', short: '低频', color: '#5eead4', label: '低频 / Bass', target: '拖第 2 段', text: '影响中心附近的厚重起伏，低音线和底鼓会让地面更有重量。' },
+    { unit: 0.28, marker: '3', short: '低中', color: '#a7f3d0', label: '低中频 / Low Mid', target: '拖第 3 段', text: '影响大范围慢波浪，适合控制整片地形是不是跟着音乐慢慢流动。' },
+    { unit: 0.42, marker: '4', short: '中频', color: '#fde68a', label: '中频 / Mid', target: '拖第 4 段', text: '影响斜向流动和地面方向感，人声、吉他、旋律主体常在这里。' },
+    { unit: 0.58, marker: '5', short: '高中', color: '#fbbf24', label: '高中频 / High Mid', target: '拖第 5 段', text: '影响外围散点尖峰。想让中高频更清楚，就主要调图上的第 5 段。' },
+    { unit: 0.72, marker: '6', short: '存在', color: '#fb7185', label: '存在感 / Presence', target: '拖第 6 段', text: '影响局部闪光触发感，镲片、齿音、清脆敲击会更容易冒亮点。' },
+    { unit: 0.86, marker: '7', short: '亮度', color: '#c084fc', label: '亮度 / Brilliance', target: '拖第 7 段', text: '影响边缘微闪和细碎高亮，拉高会让画面边缘更亮、更碎。' },
+    { unit: 1.00, marker: '8', short: '空气', color: '#93c5fd', label: '空气感 / Air', target: '拖第 8 段', text: '影响最细的高频闪烁和轻微发光颗粒，主要是最右侧的尾端。' },
+  ];
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return undefined;
+
+    const bandBounds = bandNotes.map((note, index) => {
+      const previousUnit = index === 0 ? 0 : (bandNotes[index - 1].unit + note.unit) / 2;
+      const nextUnit = index === bandNotes.length - 1 ? 1 : (note.unit + bandNotes[index + 1].unit) / 2;
+      return { ...note, start: previousUnit, end: nextUnit };
+    });
+
+    const draw = () => {
+      animationFrameRef.current = requestAnimationFrame(draw);
+
+      const rect = canvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      const targetWidth = Math.max(1, Math.floor(rect.width * ratio));
+      const targetHeight = Math.max(1, Math.floor(rect.height * ratio));
+      if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+      }
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+
+      const width = rect.width;
+      const height = rect.height;
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = 'rgba(255,255,255,0.025)';
+      ctx.fillRect(0, 0, width, height);
+
+      bandBounds.forEach((band) => {
+        const startX = band.start * width;
+        const bandWidth = Math.max(1, (band.end - band.start) * width);
+        ctx.fillStyle = `${band.color}14`;
+        ctx.fillRect(startX, 0, bandWidth, height);
+        ctx.strokeStyle = `${band.color}44`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(startX, 0);
+        ctx.lineTo(startX, height);
+        ctx.stroke();
+
+        const centerX = band.unit * width;
+        ctx.fillStyle = `${band.color}dd`;
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText(`${band.marker} ${band.short}`, centerX, 8);
+      });
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = 1;
+      for (let i = 1; i < 4; i++) {
+        const y = (height / 4) * i;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+
+      const spectrum = engine.getRawFrequencyData();
+      const binCount = spectrum.length || 1;
+      ctx.beginPath();
+      ctx.moveTo(0, height);
+      for (let x = 0; x <= width; x += 2) {
+        const unit = width <= 0 ? 0 : x / width;
+        const bin = Math.min(binCount - 1, Math.floor(unit * unit * (binCount - 1)));
+        const value = spectrum[bin] / 255;
+        const y = height - Math.pow(value, 0.72) * height * 0.84;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(width, height);
+      ctx.closePath();
+      ctx.fillStyle = `${accentHex}24`;
+      ctx.fill();
+
+      ctx.beginPath();
+      for (let x = 0; x <= width; x += 2) {
+        const unit = width <= 0 ? 0 : x / width;
+        const bin = Math.min(binCount - 1, Math.floor(unit * unit * (binCount - 1)));
+        const value = spectrum[bin] / 255;
+        const y = height - Math.pow(value, 0.72) * height * 0.84;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = `${accentHex}70`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      const midY = height * 0.5;
+      ctx.strokeStyle = 'rgba(255,255,255,0.26)';
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.moveTo(0, midY);
+      ctx.lineTo(width, midY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const points = draftCurve.current.map((value, index) => ({
+        x: (index / (GROUND_EQ_POINT_COUNT - 1)) * width,
+        y: height - (value / 100) * height,
+      }));
+
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      points.forEach((point, index) => {
+        if (index === 0) ctx.moveTo(point.x, point.y);
+        else ctx.lineTo(point.x, point.y);
+      });
+      ctx.stroke();
+
+      ctx.strokeStyle = accentHex;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      points.forEach((point, index) => {
+        if (index === 0) ctx.moveTo(point.x, point.y);
+        else ctx.lineTo(point.x, point.y);
+      });
+      ctx.stroke();
+
+      points.forEach((point, index) => {
+        const unit = index / (GROUND_EQ_POINT_COUNT - 1);
+        const band = bandBounds.find((item) => unit >= item.start && unit <= item.end) || bandBounds[bandBounds.length - 1];
+        ctx.beginPath();
+        ctx.fillStyle = band.color;
+        ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+        ctx.lineWidth = 2;
+        ctx.arc(point.x, point.y, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      });
+    };
+
+    draw();
+    return () => {
+      if (animationFrameRef.current !== null) cancelAnimationFrame(animationFrameRef.current);
+    };
+  }, [accentHex]);
+
+  return (
+    <div className="grid gap-5">
+      <div className="flex items-start justify-between gap-4 border border-white/10 bg-white/[0.03] rounded-sm p-4">
+        <div>
+          <div className="text-[12px] uppercase tracking-[0.18em] text-white/70 mb-2">地面 EQ 曲线</div>
+          <div className="text-[11px] leading-relaxed text-white/45">中线默认，上拖更敏感，下拖更钝。它只控制地面动效，不改变音乐声音。</div>
+        </div>
+        <button
+          onClick={resetCurve}
+          className="shrink-0 px-3 py-2 rounded-sm border border-white/10 text-[10px] uppercase tracking-[0.15em] text-white/55 hover:text-white transition-colors"
+        >
+          恢复中线
+        </button>
+      </div>
+
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.15em] text-white/35">
+          <span>更敏感</span>
+          <span>实时频谱在底层，EQ 曲线在上层</span>
+        </div>
+        <canvas
+          ref={canvasRef}
+          className="h-[220px] w-full rounded-sm border border-white/10 bg-black/30 cursor-crosshair touch-none"
+          onPointerDown={(event) => {
+            isDragging.current = true;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            updateCurveFromEvent(event);
+          }}
+          onPointerMove={(event) => {
+            if (!isDragging.current) return;
+            updateCurveFromEvent(event);
+          }}
+          onPointerUp={(event) => {
+            isDragging.current = false;
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }}
+          onPointerCancel={() => {
+            isDragging.current = false;
+          }}
+        />
+        <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.15em] text-white/35">
+          <span>更钝</span>
+          <span>左低频 → 右高频 · 当前均值 {Math.round(curve.reduce((sum, value) => sum + value, 0) / curve.length)}</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        {bandNotes.map((note) => (
+          <div key={note.label} className="rounded-sm border border-white/10 bg-black/20 px-3 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-sm text-[10px] font-medium text-black" style={{ backgroundColor: note.color }}>
+                  {note.marker}
+                </span>
+                <div className="truncate text-[12px] text-white/75">{note.label}</div>
+              </div>
+              <div className="text-[11px]" style={{ color: accentHex }}>{Math.round(readGroundEqCurveValue(curve, note.unit))}</div>
+            </div>
+            <div className="mt-2 text-[10px] leading-relaxed text-white/45">
+              <span style={{ color: note.color }}>{note.target}</span>
+              <span className="text-white/25"> · 曲线位置 {Math.round(note.unit * 100)}%</span>
+            </div>
+            <div className="mt-1 text-[10px] leading-relaxed text-white/35">{note.text}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { Canvas } from '@react-three/fiber';
 import { UI } from './components/UI/UI';
 import { MapScene } from './components/AudioVisualizer/MapScene';
 import { useEffect, useState } from 'react';
+import { readGroundEqSettingsStorage, writeGroundEqSettingsStorage, type StoredGroundEqSettings } from './lib/groundEqSettings';
 import {
   BUILT_IN_THEME_IDS,
   CUSTOM_THEME_ID,
@@ -29,6 +30,7 @@ function readInitialCustomThemeState() {
 
 export default function App() {
   const [theme, setTheme] = useState(readActiveThemeStorage);
+  const [groundEqSettings, setGroundEqSettings] = useState<StoredGroundEqSettings>(readGroundEqSettingsStorage);
   const [customThemeState, setCustomThemeState] = useState(readInitialCustomThemeState);
   const customThemes = customThemeState.presets;
   const activeCustomThemeId = customThemeState.activeId;
@@ -65,6 +67,11 @@ export default function App() {
     writeThemeRotationStorage(settings, availableRotationThemeIds);
   };
 
+  const updateGroundEqSettings = (settings: StoredGroundEqSettings) => {
+    setGroundEqSettings(settings);
+    writeGroundEqSettingsStorage(settings);
+  };
+
   useEffect(() => {
     const normalized = readThemeRotationStorage(availableRotationThemeIds);
     setThemeRotation((current) => {
@@ -99,13 +106,15 @@ export default function App() {
         customThemes={customThemes}
         activeCustomThemeId={activeCustomThemeId}
         themeRotation={themeRotation}
+        groundEqSettings={groundEqSettings}
         onThemeChange={updateTheme}
         onCustomThemesChange={updateCustomThemes}
         onThemeRotationChange={updateThemeRotation}
+        onGroundEqSettingsChange={updateGroundEqSettings}
       />
       <div className="absolute inset-0 z-0">
         <Canvas camera={{ position: [35, 25, 35], fov: 45 }}>
-          <MapScene themeColors={resolvedTheme} />
+          <MapScene themeColors={resolvedTheme} groundEqSettings={groundEqSettings} />
         </Canvas>
       </div>
     </div>

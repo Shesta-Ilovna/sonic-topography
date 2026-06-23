@@ -1,11 +1,13 @@
 {
-  "name": "react-example",
+  "name": "sonic-topography",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
+    "build:go-embed": "node scripts/prepare-go-embed.mjs",
+    "build:go-exe": "npm run build && npm run build:go-embed && go build -o SonicTopography.exe ./cmd/sonic-topography",
     "build:wallpaper": "vite build --base ./ --outDir dist-wallpaper --emptyOutDir false && node scripts/prepare-wallpaper.mjs",
     "start": "node local-server.mjs",
     "preview": "vite preview",

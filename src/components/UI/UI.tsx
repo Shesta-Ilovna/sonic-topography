@@ -71,7 +71,18 @@ type PendingDelete =
   | { type: 'playlist'; playlistId: string; label: string };
 
 const PLAYLIST_STORAGE_KEY = 'sonic-topography-playlists-v1';
+const SIDE_NAV_HINT_STORAGE_KEY = 'sonic-topography-side-nav-hint-seen-v1';
 const baseUrl = import.meta.env.BASE_URL || '/';
+
+function readSideNavHintSeen() {
+  if (typeof window === 'undefined') return false;
+  return window.localStorage.getItem(SIDE_NAV_HINT_STORAGE_KEY) === '1';
+}
+
+function writeSideNavHintSeen() {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(SIDE_NAV_HINT_STORAGE_KEY, '1');
+}
 
 function createDefaultPlaylists(): SavedPlaylist[] {
   return [
@@ -175,9 +186,21 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
   const [isNeteaseCookieValid, setIsNeteaseCookieValid] = useState(false);
   const [isSyncingNeteaseCookie, setIsSyncingNeteaseCookie] = useState(false);
   const [isMobileSideNavOpen, setIsMobileSideNavOpen] = useState(false);
+  const [hasSeenSideNavHint, setHasSeenSideNavHint] = useState(readSideNavHintSeen);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [presetTransferStatus, setPresetTransferStatus] = useState('');
   const hasLoadedPlaylistsRef = useRef(false);
+
+  const markSideNavHintSeen = () => {
+    if (hasSeenSideNavHint) return;
+    writeSideNavHintSeen();
+    setHasSeenSideNavHint(true);
+  };
+
+  const openMobileSideNav = () => {
+    markSideNavHintSeen();
+    setIsMobileSideNavOpen(true);
+  };
 
   const closeFloatingPanels = () => {
     setShowOptionsPanel(false);
@@ -218,6 +241,10 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
     setShowPlaylistPanel(true);
     setIsMobileSideNavOpen(false);
   };
+
+  useEffect(() => {
+    if (isMobileSideNavOpen) markSideNavHintSeen();
+  }, [isMobileSideNavOpen]);
 
   useEffect(() => {
     if (!hasLoadedPlaylistsRef.current) return;
@@ -859,6 +886,17 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
           DROP AUDIO FILE TO PLAY
         </div>
       )}
+
+      {!hasSeenSideNavHint && !isMobileSideNavOpen && (
+        <div className="absolute top-[88px] left-[56px] z-40 pointer-events-none select-none">
+          <div className="text-[14px] sm:text-[15px] leading-7 tracking-[0.18em] text-white/38">
+            点击左上角 AJIN. 打开侧边栏
+          </div>
+          <div className="text-[12px] sm:text-[13px] leading-6 tracking-[0.16em] text-white/28">
+            或将鼠标滑到左侧打开侧边栏
+          </div>
+        </div>
+      )}
       
       {isMobileSideNavOpen && (
         <button
@@ -872,7 +910,7 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
       {/* Sidebar Left */}
       <div
         className={`side-nav-trigger absolute left-0 top-0 h-full z-[60] transition-all pointer-events-auto ${isMobileSideNavOpen ? 'is-mobile-open' : ''}`}
-        onMouseEnter={() => setIsMobileSideNavOpen(true)}
+        onMouseEnter={openMobileSideNav}
       >
         <aside className={`side-nav-panel absolute left-0 top-0 h-full border-r border-white/5 flex flex-col pointer-events-auto ${isMobileSideNavOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform duration-300`} style={{ background: 'rgba(2,4,10,0.8)' }}>
           <button onClick={closeFloatingPanels} className="uppercase tracking-[0.2em] text-[10px] mb-12 opacity-100 transition-opacity cursor-pointer" style={{ writingMode: 'vertical-rl', color: accentHex }}>可视化</button>
@@ -957,7 +995,13 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
         className="brand-mark absolute top-[38px] left-[56px] font-black text-[24px] leading-[40px] tracking-[-1px] text-white z-50 select-none pointer-events-auto cursor-pointer transition-opacity hover:opacity-80"
         aria-label={isMobileSideNavOpen ? '关闭侧边栏' : '打开侧边栏'}
         aria-expanded={isMobileSideNavOpen}
-        onClick={() => setIsMobileSideNavOpen((open) => !open)}
+        onClick={() => {
+          if (isMobileSideNavOpen) {
+            setIsMobileSideNavOpen(false);
+          } else {
+            openMobileSideNav();
+          }
+        }}
         style={{ color: isMobileSideNavOpen ? accentHex : undefined }}
       >
         AJIN.
@@ -2152,23 +2196,39 @@ function CustomColorPanel({
           const isActivePreset = preset.id === activePreset.id;
           const isUsingPreset = theme === CUSTOM_THEME_ID && preset.id === activeCustomThemeId;
           return (
-            <button
+            <div
               key={preset.id}
-              onClick={() => savePresets(customThemes, preset.id)}
-              className={`shrink-0 min-w-[120px] px-3 py-2 rounded-sm border text-left transition-colors ${
+              className={`relative shrink-0 min-w-[140px] rounded-sm border transition-colors ${
                 isActivePreset ? 'border-white/35 bg-white/10' : 'border-white/10 bg-black/20 hover:bg-white/5'
               }`}
             >
-              <span className="block text-[11px] text-white/75 truncate">{preset.name}</span>
-              <span className="mt-2 flex gap-1">
-                {[preset.background, preset.cool, preset.warm, preset.accent].map((color) => (
-                  <span key={color} className="h-2.5 w-5 rounded-[1px]" style={{ backgroundColor: color }} />
-                ))}
-              </span>
-              <span className="mt-2 block text-[9px] uppercase tracking-[0.14em]" style={{ color: isUsingPreset ? accentHex : 'rgba(255,255,255,0.35)' }}>
-                {isUsingPreset ? '正在使用' : '已保存'}
-              </span>
-            </button>
+              <button
+                onClick={() => savePresets(customThemes, preset.id)}
+                className="block w-full px-3 py-2 pr-10 text-left"
+              >
+                <span className="block text-[11px] text-white/75 truncate">{preset.name}</span>
+                <span className="mt-2 flex gap-1">
+                  {[preset.background, preset.cool, preset.warm, preset.accent].map((color) => (
+                    <span key={color} className="h-2.5 w-5 rounded-[1px]" style={{ backgroundColor: color }} />
+                  ))}
+                </span>
+                <span className="mt-2 block text-[9px] uppercase tracking-[0.14em]" style={{ color: isUsingPreset ? accentHex : 'rgba(255,255,255,0.35)' }}>
+                  {isUsingPreset ? '正在使用' : '已保存'}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  deleteCustomTheme(preset.id);
+                }}
+                disabled={customThemes.length <= 1}
+                className="absolute right-2 top-2 rounded-sm border border-white/10 px-2 py-1 text-[9px] uppercase tracking-[0.12em] text-white/35 hover:text-[#ef4444] disabled:opacity-25 disabled:hover:text-white/35"
+                title="删除主题"
+              >
+                删除
+              </button>
+            </div>
           );
         })}
       </div>

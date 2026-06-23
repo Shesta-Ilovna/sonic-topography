@@ -12,7 +12,7 @@ Last full verification commit: `unknown`
 | Change visual themes or custom colors | `src/lib/themes.ts`; `src/App.tsx`; `src/components/UI/UI.tsx`; `src/components/AudioVisualizer/MapScene.tsx`; `src/components/AudioVisualizer/CustomShaderMaterial.ts` | No automated tests yet | `npm run lint`; `npm run build`; browser Settings -> Custom Color QA |
 | Change ground EQ visual response | `src/lib/groundEqSettings.ts`; `src/components/UI/UI.tsx`; `src/components/AudioVisualizer/MapScene.tsx`; `src/components/AudioVisualizer/CustomShaderMaterial.ts` | No automated tests yet | `npm run lint`; `npm run build`; browser Settings -> Ground EQ QA |
 | Change Netease search/import, browser Cookie, cloud library, or daily recommendations | `src/components/UI/UI.tsx`; `src/lib/neteaseCookie.ts`; `vite.config.ts`; `local-server.mjs`; `package.json` | `src/lib/neteaseCookie.test.ts` | `npx tsx src/lib/neteaseCookie.test.ts`; `npm run lint`; `npm run build`; `/api/netease/cookie`, `/api/netease/search`, `/api/netease/liked`, `/api/netease/playlists`, and `/api/netease/daily-recommend` smoke tests |
-| Change one-click packaged startup | `local-server.mjs`; `start-sonic-topography.bat`; `package.json` | No automated tests yet | `npm run build`; `npm start`; `http://127.0.0.1:4173` smoke test |
+| Change one-click packaged startup or Go EXE packaging | `local-server.mjs`; `cmd/sonic-topography/main.go`; `internal/sonicserver/server.go`; `start-sonic-topography.bat`; `package.json` | `internal/sonicserver/server_test.go` | `npm run build`; `npm start`; `go test ./...`; `npm run build:go-exe`; `http://127.0.0.1:4173` smoke test |
 | Package Wallpaper Engine web wallpaper | `package.json`; `scripts/prepare-wallpaper.mjs`; `src/lib/AudioEngine.ts`; `src/components/UI/UI.tsx` | No automated tests yet | `npm run lint`; `npm run build:wallpaper`; import `dist-wallpaper/index.html` in Wallpaper Engine |
 | Change saved playlists | `src/components/UI/UI.tsx`; `local-server.mjs`; `vite.config.ts` | No automated tests yet | `npm run lint`; playlist API persistence QA |
 | Change preset import/export | `src/lib/presetTransfer.ts`; `src/components/UI/UI.tsx`; `docs/code-map.md` | `src/lib/presetTransfer.test.ts` | `npx tsx src/lib/presetTransfer.test.ts`; `npm run lint`; `npm run build`; browser Settings -> import/export QA |
@@ -22,7 +22,6 @@ Last full verification commit: `unknown`
 | Change LRC parsing | `src/lib/lyrics.ts`; `src/components/UI/LyricsDisplay.tsx` | No automated tests yet | `npm run lint`; QA with an `.lrc` file |
 | Change audio metadata reading | `src/lib/metadata.ts` | No automated tests yet | `npm run lint`; QA with audio containing ID3 title/artist/lyrics |
 | Change 3D visualizer scene | `src/components/AudioVisualizer/MapScene.tsx`; `src/components/AudioVisualizer/CustomShaderMaterial.ts` | No automated tests yet | `npm run build`; browser visual QA |
-| Change Sonic City templates or admin editor | `sonic-city/src/AdminPage.tsx`; `sonic-city/src/templateStore.ts`; `sonic-city/src/TemplateCityScene.tsx`; `sonic-city/vite.config.ts` | No automated tests yet | `cd sonic-city; npm run lint`; `cd sonic-city; npm run build`; `/admin` save QA |
 
 ## End-To-End Flow
 
@@ -184,6 +183,19 @@ Settings -> Preset Migration
 -> imported data intentionally does not include uploaded audio files, real music files, current playback progress, or play queue
 ```
 
+Go EXE packaging flow:
+
+```text
+npm run build
+-> Vite writes browser assets to dist/
+-> npm run build:go-embed copies dist/ into cmd/sonic-topography/dist without deleting directories
+-> go build -o SonicTopography.exe ./cmd/sonic-topography
+-> cmd/sonic-topography/main.go embeds dist and starts a localhost server
+-> internal/sonicserver/server.go serves the SPA, /api/playlists, and the Netease proxy endpoints
+-> the EXE opens the default browser at the selected 127.0.0.1 port
+-> playlists persist under the user config directory, not the repository data/ folder
+```
+
 Wallpaper Engine flow:
 
 ```text
@@ -194,18 +206,6 @@ npm run build:wallpaper
 -> project.json enables supportsaudioprocessing
 -> window.wallpaperRegisterAudioListener feeds system audio bands into AudioEngine
 -> MapScene renders terrain, ripples, and meteors from Wallpaper Engine audio data
-```
-
-Sonic City template flow:
-
-```text
-sonic-city/src/App.tsx
--> /admin renders AdminPage for image upload and light-zone editing
--> saveTemplateLibrary() writes browser localStorage and PUT /api/sonic-city/templates
--> sonic-city/vite.config.ts persists sonic-city/data/templates.json
--> player route renders TemplateCityScene
--> loadTemplateLibrary() reads the default template
--> TemplateCityScene draws backgroundImage plus audio-driven canvas zones
 ```
 
 ## Code Map
@@ -239,6 +239,18 @@ Provides the Vite dev server middleware for `/api/netease/cookie`, `/api/netease
 `local-server.mjs`
 
 Production local server for the built `dist/` folder. It mirrors the Netease proxy endpoints from `vite.config.ts` so the packaged app keeps Search, cloud library, daily recommendations, lyrics, browser Cookie sync, and audio proxy support without running Vite. It also exposes `/api/playlists` for file-backed playlist persistence.
+
+`internal/sonicserver/server.go`
+
+Go implementation of the production local server for single-EXE packaging. It mirrors `local-server.mjs` endpoint names and response shapes, embeds the same playable-song filtering and Cookie-in-memory behavior, and stores packaged playlists in the user's config directory by default.
+
+`cmd/sonic-topography/main.go`
+
+Go EXE entrypoint. It embeds `cmd/sonic-topography/dist`, starts the Sonic server on `127.0.0.1:4173` or the next available local port, and opens the default browser.
+
+`scripts/prepare-go-embed.mjs`
+
+Copies Vite's `dist/` output into `cmd/sonic-topography/dist` before `go build` so the final EXE contains the current frontend assets.
 
 `start-sonic-topography.bat`
 
@@ -276,28 +288,6 @@ Connects the audio engine to the Three.js scene, driving ripples, meteors, and c
 
 Defines terrain vertex/fragment shaders and changes height and color from audio bands and trigger waves.
 
-### Sonic City Admin And Template Player
-
-`sonic-city/src/AdminPage.tsx`
-
-Owns the local template editor at `/admin`: city background upload, template create/rename/delete/default selection, rectangle and polygon zone drawing, Chinese parameter controls, per-edge polygon diffusion, and save status.
-
-`sonic-city/src/templateStore.ts`
-
-Defines the browser storage key, the built-in lights-off city sample template, normalization, default-template selection, and the two-step persistence path: `localStorage` first, then the local API.
-
-`sonic-city/src/TemplateCityScene.tsx`
-
-Loads the default template on the player route, displays the static city background, and draws each saved light zone on a canvas only while audio playback or system capture is active. Paused or stopped audio leaves all zones transparent.
-
-`sonic-city/vite.config.ts`
-
-Provides the local template API endpoints `GET /api/sonic-city/templates` and `PUT /api/sonic-city/templates`. The API stores runtime template data in `sonic-city/data/templates.json`.
-
-`sonic-city/data/templates.json`
-
-Runtime template file created by the local API. It is ignored by git as user-editable data, but it is the first source used by the running dev server when present.
-
 ## Test Index
 
 | Test file | Covers |
@@ -305,6 +295,7 @@ Runtime template file created by the local API. It is ignored by git as user-edi
 | `src/lib/neteaseCookie.test.ts` | Cookie normalization and `X-Netease-Cookie` header creation |
 | `src/lib/triggerSettings.test.ts` | Trigger setting normalization and bounds |
 | `src/lib/presetTransfer.test.ts` | Preset package validation, Cookie opt-in export, playlist/theme/EQ/trigger normalization |
+| `internal/sonicserver/server_test.go` | Go Cookie normalization, playlist normalization, and `/api/playlists` persistence |
 
 ## Common Change Recipes
 
@@ -339,10 +330,20 @@ Runtime template file created by the local API. It is ignored by git as user-edi
 ### Change One-Click Startup
 
 1. Modify shared proxy behavior in both `vite.config.ts` and `local-server.mjs`.
-2. Modify launcher behavior in `start-sonic-topography.bat`.
-3. Run `npm run lint` and `npm run build`.
-4. Run `npm start` or double-click `start-sonic-topography.bat`.
-5. Smoke test `http://127.0.0.1:4173` and `http://127.0.0.1:4173/api/netease/search?keywords=angel&limit=2`.
+2. If the change affects packaged EXE behavior, mirror it in `internal/sonicserver/server.go`.
+3. Modify launcher behavior in `start-sonic-topography.bat` or `cmd/sonic-topography/main.go`.
+4. Run `npm run lint`, `npm run build`, and `go test ./...` when Go is installed.
+5. Run `npm start` or double-click `start-sonic-topography.bat`.
+6. Smoke test `http://127.0.0.1:4173` and `http://127.0.0.1:4173/api/netease/search?keywords=angel&limit=2`.
+
+### Package Windows Go EXE
+
+1. Run `npm run lint` and `npm run build`.
+2. Run `npm run build:go-embed`.
+3. Run `go test ./...`.
+4. Run `go build -o SonicTopography.exe ./cmd/sonic-topography` or `npm run build:go-exe`.
+5. Double-click `SonicTopography.exe`; verify it opens the browser automatically.
+6. Smoke test local upload/demo playback, `/api/playlists`, anonymous Netease search, valid-Cookie Netease search/cloud menus, and `/api/netease/audio`.
 
 ### Package Wallpaper Engine Web Wallpaper
 
@@ -382,15 +383,6 @@ Runtime template file created by the local API. It is ignored by git as user-edi
 6. In the browser, open `Settings`, choose `Meteor`, set `Cooldown (frames)` to `300`, refresh, and verify the setting persists in the same browser.
 7. Verify visible Meteors are spaced about five seconds apart.
 
-### Change Sonic City Template Zones
-
-1. Modify built-in defaults in `sonic-city/src/templateStore.ts` if new users should get the change.
-2. Use `/admin` or `PUT /api/sonic-city/templates` if the current local runtime template should change immediately.
-3. If zone schema, persistence, or API behavior changes, update `sonic-city/src/templateTypes.ts`, `sonic-city/src/templateStore.ts`, and `sonic-city/vite.config.ts` together.
-4. Run `cd sonic-city; npm run lint` and `cd sonic-city; npm run build`.
-5. Open `http://127.0.0.1:3100/admin`, verify zones appear over the city image and can be selected/edited/saved.
-6. Open `http://127.0.0.1:3100/`, play Demo or upload audio, and verify lights are off while paused and frequency-bound zones light only during playback.
-
 ## Local Verification Commands
 
 ```powershell
@@ -398,12 +390,13 @@ npm run lint
 npx tsx src/lib/neteaseCookie.test.ts
 npx tsx src/lib/triggerSettings.test.ts
 npm run build
+npm run build:go-embed
+npm run build:go-exe
+go test ./...
+go build -o SonicTopography.exe ./cmd/sonic-topography
 npm run build:wallpaper
 npm run dev
 npm start
-cd sonic-city; npm run lint
-cd sonic-city; npm run build
-cd sonic-city; npm run dev
 ```
 
 ## Search Shortcuts
@@ -412,12 +405,12 @@ cd sonic-city; npm run dev
 rg -n "loadDemo|processFiles|lyricsText|extractAudioMetadata" src
 rg -n "searchNetease|loadNeteaseSong|neteaseCookie|/api/netease" src vite.config.ts local-server.mjs
 rg -n "api/netease|local-server|start-sonic" vite.config.ts local-server.mjs package.json
+rg -n "sonicserver|build:go|go:embed|Netease" cmd internal package.json scripts
 rg -n "PLAYLIST_STORAGE_KEY|/api/playlists|playlists|songToAdd|showPlaylistPanel" src/components/UI/UI.tsx vite.config.ts local-server.mjs
 rg -n "playQueue|currentSongId|playMode|playFromQueue" src/components/UI/UI.tsx
 rg -n "meteorTrigger.cooldown|lastMeteorSpawnTime|addMeteor" src/components
 rg -n "triggerSettings|TRIGGER_SETTINGS_STORAGE_KEY|pulseTrigger|meteorTrigger" src
 rg -n "loadUrl|loadFile|getAudioData|onFreqTrigger" src/lib src/components
-rg -n "TemplateCityScene|AdminPage|saveTemplateLibrary|sonic-city/templates" sonic-city/src sonic-city/vite.config.ts
 ```
 
 ## Known Runtime Notes
@@ -425,7 +418,11 @@ rg -n "TemplateCityScene|AdminPage|saveTemplateLibrary|sonic-city/templates" son
 - Static assets live in `public/` and are served from the root path, for example `public/demo.mp3` is `/demo.mp3`.
 - `package.json` has a `clean` script containing `rm -rf`; do not run it.
 - Double-click startup uses `start-sonic-topography.bat`; production local server runs on `http://127.0.0.1:4173`.
+- Go EXE packaging requires a local Go toolchain. The final EXE does not require users to install Go or Node, but building it does.
+- `scripts/prepare-go-embed.mjs` intentionally copies files without recursively deleting the embed directory because project rules forbid bulk deletion.
+- Go EXE playlist persistence uses the user's config directory, for example `%APPDATA%/SonicTopography/playlists.json` on Windows.
 - Browser autoplay and Web Audio initialization depend on user interaction. Click Demo, Play, or Upload before expecting audio.
+- The first-run side navigation hint is browser-local via `sonic-topography-side-nav-hint-seen-v1`. It disappears permanently for that browser after the side rail is opened once.
 - System audio capture depends on browser permission. Permission cancelation should return silently to regular playback state.
 - Netease playback URLs can be unavailable because of copyright, membership, region, or login restrictions. Lyrics may still load when audio cannot play.
 - Search filters out songs without playback URLs. The proxy checks candidates in small concurrent batches and caches search/playability results to keep repeat searches faster.
@@ -438,5 +435,3 @@ rg -n "TemplateCityScene|AdminPage|saveTemplateLibrary|sonic-city/templates" son
 - Saved playlists are file-backed in `data/playlists.json`; `data/` is ignored by git because it is user runtime data. Browser `localStorage` is kept as a fallback/migration source.
 - Preset import overwrites matching browser settings and syncs playlists to the local server. Export excludes Netease Cookie unless the user explicitly opts in; exported Cookie files should be treated as sensitive login data.
 - If the terrain snaps flat when stopping or switching audio, inspect `AudioEngine.beginVisualRelease()` and the non-playing branch in `getAudioData()` before changing shader code.
-- Sonic City template data is also runtime data. `sonic-city/data/templates.json` may contain local edits from `/admin`; do not overwrite it unless the requested change is specifically about the current local template.
-- Sonic City loads server templates before browser `localStorage`, so a successful API save will replace stale browser template data on refresh.

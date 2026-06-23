@@ -193,6 +193,8 @@ SonicTopography.exe
 
 双击 EXE 后会启动本地服务，并自动打开默认浏览器。
 
+EXE 固定使用 `http://127.0.0.1:4173`。如果这个端口已经有 Sonic Topography 在运行，会直接打开已有页面；如果被其他程序占用，需要先关闭占用端口的程序。
+
 ## macOS 版本
 
 可以从 Windows 交叉编译 macOS 二进制：

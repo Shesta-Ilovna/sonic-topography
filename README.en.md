@@ -193,6 +193,8 @@ SonicTopography.exe
 
 Double-clicking the EXE starts the local server and opens the default browser.
 
+The EXE always uses `http://127.0.0.1:4173`. If Sonic Topography is already running on that port, it opens the existing page. If another program is using the port, close that program first.
+
 ## macOS Build
 
 You can cross-compile macOS binaries from Windows:

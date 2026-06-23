@@ -2,7 +2,9 @@ package main
 
 import (
 	"embed"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net"
@@ -11,6 +13,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"sonic-topography/internal/sonicserver"
@@ -25,9 +28,16 @@ func main() {
 		log.Fatalf("load embedded dist: %v", err)
 	}
 
-	listener, port, err := listen()
+	listener, port, existingAddress, err := listen()
 	if err != nil {
 		log.Fatalf("start listener: %v", err)
+	}
+	if existingAddress != "" {
+		fmt.Println("Sonic Topography is already running at " + existingAddress)
+		if err := openBrowser(existingAddress); err != nil {
+			fmt.Println("Open this address in your browser: " + existingAddress)
+		}
+		return
 	}
 	defer listener.Close()
 
@@ -50,7 +60,7 @@ func main() {
 	}
 }
 
-func listen() (net.Listener, int, error) {
+func listen() (net.Listener, int, string, error) {
 	preferredPort := 4173
 	if raw := os.Getenv("PORT"); raw != "" {
 		if value, err := strconv.Atoi(raw); err == nil && value > 0 {
@@ -59,13 +69,32 @@ func listen() (net.Listener, int, error) {
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(preferredPort))
 	if err == nil {
-		return listener, preferredPort, nil
+		return listener, preferredPort, "", nil
 	}
-	listener, err = net.Listen("tcp", "127.0.0.1:0")
+	preferredAddress := "http://127.0.0.1:" + strconv.Itoa(preferredPort)
+	if isSonicTopographyServer(preferredAddress) {
+		return nil, preferredPort, preferredAddress, nil
+	}
+	return nil, 0, "", fmt.Errorf("%w: 127.0.0.1:%d is already in use", errPortInUse, preferredPort)
+}
+
+var errPortInUse = errors.New("Sonic Topography cannot start because the fixed port is unavailable")
+
+func isSonicTopographyServer(address string) bool {
+	client := http.Client{Timeout: 800 * time.Millisecond}
+	response, err := client.Get(address)
 	if err != nil {
-		return nil, 0, err
+		return false
 	}
-	return listener, listener.Addr().(*net.TCPAddr).Port, nil
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK || !strings.Contains(response.Header.Get("Content-Type"), "text/html") {
+		return false
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, 4096))
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(body), "Sonic Topography")
 }
 
 func openBrowser(address string) error {

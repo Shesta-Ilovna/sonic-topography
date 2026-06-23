@@ -192,7 +192,7 @@ npm run build
 -> go build -o SonicTopography.exe ./cmd/sonic-topography
 -> cmd/sonic-topography/main.go embeds dist and starts a localhost server
 -> internal/sonicserver/server.go serves the SPA, /api/playlists, and the Netease proxy endpoints
--> the EXE opens the default browser at the selected 127.0.0.1 port
+-> the EXE opens the default browser at http://127.0.0.1:4173
 -> playlists persist under the user config directory, not the repository data/ folder
 ```
 
@@ -246,7 +246,7 @@ Go implementation of the production local server for single-EXE packaging. It mi
 
 `cmd/sonic-topography/main.go`
 
-Go EXE entrypoint. It embeds `cmd/sonic-topography/dist`, starts the Sonic server on `127.0.0.1:4173` or the next available local port, and opens the default browser.
+Go EXE entrypoint. It embeds `cmd/sonic-topography/dist`, starts the Sonic server on fixed `127.0.0.1:4173`, reuses an existing Sonic Topography server on that port, and opens the default browser. It intentionally does not fall back to random ports so browser `localStorage` stays under one origin.
 
 `scripts/prepare-go-embed.mjs`
 
@@ -421,6 +421,7 @@ rg -n "loadUrl|loadFile|getAudioData|onFreqTrigger" src/lib src/components
 - Go EXE packaging requires a local Go toolchain. The final EXE does not require users to install Go or Node, but building it does.
 - `scripts/prepare-go-embed.mjs` intentionally copies files without recursively deleting the embed directory because project rules forbid bulk deletion.
 - Go EXE playlist persistence uses the user's config directory, for example `%APPDATA%/SonicTopography/playlists.json` on Windows.
+- If `SonicTopography.exe` cannot start, check whether another non-Sonic program is already listening on `127.0.0.1:4173`. The Go launcher reuses an existing Sonic Topography server on that port, but it does not fall back to a random port.
 - Browser autoplay and Web Audio initialization depend on user interaction. Click Demo, Play, or Upload before expecting audio.
 - The first-run side navigation hint is browser-local via `sonic-topography-side-nav-hint-seen-v1`. It disappears permanently for that browser after the side rail is opened once.
 - System audio capture depends on browser permission. Permission cancelation should return silently to regular playback state.

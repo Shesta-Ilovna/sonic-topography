@@ -237,9 +237,9 @@ npm run build:go-exe
 
 ## 作者支持
 
-如果sonic-topography陪你欣赏了一首音乐，也欢迎请作者喝一杯咖啡
+如果sonic-topography陪你欣赏了一首音乐，也欢迎请作者喝一杯咖啡。
 ![Sonic Topography main visualizer](./public/screenshots/zhichi.png)
-您的付出将变为token，帮助项目更快更好的更新
+您的付出将变为token，帮助项目更快更好的更新。
 
 ## 注意事项
 

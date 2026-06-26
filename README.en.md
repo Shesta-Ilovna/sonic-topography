@@ -240,5 +240,5 @@ npm run build:go-exe
 - This project is for learning, research, and personal non-commercial use only. Commercial use is not permitted.
 - Netease playback uses web endpoints and may be affected by copyright, membership, region, or account state.
 - Search results show only songs playable under the current anonymous state or current Cookie permissions.
-- Cookies are sensitive login credentials. Do not share your own Cookie.
+- Please attention ! Cookies are sensitive login credentials. Do not share your own Cookie.
 - Do not commit `dist/`, `dist-mac/`, `dist-wallpaper/`, `SonicTopography.exe`, or local `data/`.

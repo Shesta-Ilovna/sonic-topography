@@ -36,3 +36,18 @@ export interface TrackInfo {
   file?: File;
   url?: string;
 }
+
+export interface NeteaseSong {
+  provider?: 'netease' | 'qq';
+  id: number | string;
+  qqId?: number | string;
+  mid?: string;
+  songmid?: string;
+  mediaMid?: string;
+  cover?: string;
+  name: string;
+  artist: string;
+  album: string;
+  duration: number;
+  fee: number;
+}

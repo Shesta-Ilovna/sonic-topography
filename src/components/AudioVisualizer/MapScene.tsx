@@ -5,12 +5,12 @@ import { useRef, useMemo, useState, useLayoutEffect, useEffect } from 'react';
 import { MapShaderMaterial } from './CustomShaderMaterial';
 import { engine } from '../../lib/AudioEngine';
 import { themes, type ThemeColors } from '../../lib/themes';
-import { applyGroundEqValue, readGroundEqSettingsStorage, type StoredGroundEqSettings } from '../../lib/groundEqSettings';
+import { DEFAULT_GROUND_MOTION_SPEED, applyGroundEqBandValue, readGroundEqSettingsStorage, type StoredGroundEqSettings } from '../../lib/groundEqSettings';
 
 extend({ MapShaderMaterial });
 
 export function MapScene({
-  themeColors = themes['nocturnal'],
+  themeColors = themes['ink-wash'],
   groundEqSettings = readGroundEqSettingsStorage(),
   rotationSpeed = themeColors.uRotationSpeed,
 }: {
@@ -20,11 +20,61 @@ export function MapScene({
 }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const materialRef = useRef<any>(null);
-  const { clock } = useThree();
+  const { clock, camera } = useThree();
+  const smoothedGroundAudioRef = useRef({
+    subBass: 0,
+    bass: 0,
+    lowMid: 0,
+    mid: 0,
+    highMid: 0,
+    presence: 0,
+    brilliance: 0,
+    air: 0,
+  });
   
   const gridSize = 160;
   const spacing = 1.05;
   const count = gridSize * gridSize;
+
+  const controlsRef = useRef<any>(null);
+
+  useEffect(() => {
+    // Restore on mount
+    const saved = localStorage.getItem('sonic_camera_state');
+    if (saved) {
+      try {
+        const { position, target } = JSON.parse(saved);
+        if (position) {
+          camera.position.set(position.x, position.y, position.z);
+        }
+        // Use a timeout to ensure controls are fully initialized before applying target
+        setTimeout(() => {
+          if (target && controlsRef.current) {
+            controlsRef.current.target.set(target.x, target.y, target.z);
+            controlsRef.current.update();
+          }
+        }, 0);
+      } catch (e) {
+        console.error("Failed to restore camera state", e);
+      }
+    }
+
+    const saveState = () => {
+      if (controlsRef.current && camera) {
+        localStorage.setItem('sonic_camera_state', JSON.stringify({
+          position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+          target: { x: controlsRef.current.target.x, y: controlsRef.current.target.y, z: controlsRef.current.target.z }
+        }));
+      }
+    };
+
+    window.addEventListener('beforeunload', saveState);
+
+    return () => {
+      saveState();
+      window.removeEventListener('beforeunload', saveState);
+    };
+  }, [camera]);
 
   useLayoutEffect(() => {
     if (!meshRef.current) return;
@@ -165,22 +215,43 @@ export function MapScene({
     const mat = materialRef.current;
     const data = engine.getAudioData();
     const t = themeColors;
-    const eqCurve = groundEqSettings.curve;
-    const eqSubBass = applyGroundEqValue(data.subBass, eqCurve, 0.00);
-    const eqBass = applyGroundEqValue(data.bass, eqCurve, 0.12);
-    const eqLowMid = applyGroundEqValue(data.lowMid, eqCurve, 0.28);
-    const eqMid = applyGroundEqValue(data.mid, eqCurve, 0.42);
-    const eqHighMid = applyGroundEqValue(data.highMid, eqCurve, 0.58);
-    const eqPresence = applyGroundEqValue(data.presence, eqCurve, 0.72);
-    const eqBrilliance = applyGroundEqValue(data.brilliance, eqCurve, 0.86);
-    const eqAir = applyGroundEqValue(data.air, eqCurve, 1.00);
-    const eqAverage = eqCurve.reduce((sum, value) => sum + value, 0) / Math.max(1, eqCurve.length);
-    const eqEnergy = applyGroundEqValue(data.energy, eqCurve, (eqAverage / 100));
+    const eqBands = groundEqSettings.bands;
+    const motionSpeed = Math.max(0, Math.min(100, groundEqSettings.motionSpeed ?? DEFAULT_GROUND_MOTION_SPEED));
+    const responseRate = THREE.MathUtils.lerp(2.2, 60, motionSpeed / 100);
+    const responseBlend = 1 - Math.exp(-responseRate * delta);
+    const targetEqSubBass = applyGroundEqBandValue(data.subBass, eqBands, 'subBass');
+    const targetEqBass = applyGroundEqBandValue(data.bass, eqBands, 'bass');
+    const targetEqLowMid = applyGroundEqBandValue(data.lowMid, eqBands, 'lowMid');
+    const targetEqMid = applyGroundEqBandValue(data.mid, eqBands, 'mid');
+    const targetEqHighMid = applyGroundEqBandValue(data.highMid, eqBands, 'highMid');
+    const targetEqPresence = applyGroundEqBandValue(data.presence, eqBands, 'presence');
+    const targetEqBrilliance = applyGroundEqBandValue(data.brilliance, eqBands, 'brilliance');
+    const targetEqAir = applyGroundEqBandValue(data.air, eqBands, 'air');
+    const smoothed = smoothedGroundAudioRef.current;
+    smoothed.subBass = THREE.MathUtils.lerp(smoothed.subBass, targetEqSubBass, responseBlend);
+    smoothed.bass = THREE.MathUtils.lerp(smoothed.bass, targetEqBass, responseBlend);
+    smoothed.lowMid = THREE.MathUtils.lerp(smoothed.lowMid, targetEqLowMid, responseBlend);
+    smoothed.mid = THREE.MathUtils.lerp(smoothed.mid, targetEqMid, responseBlend);
+    smoothed.highMid = THREE.MathUtils.lerp(smoothed.highMid, targetEqHighMid, responseBlend);
+    smoothed.presence = THREE.MathUtils.lerp(smoothed.presence, targetEqPresence, responseBlend);
+    smoothed.brilliance = THREE.MathUtils.lerp(smoothed.brilliance, targetEqBrilliance, responseBlend);
+    smoothed.air = THREE.MathUtils.lerp(smoothed.air, targetEqAir, responseBlend);
+    const eqSubBass = smoothed.subBass;
+    const eqBass = smoothed.bass;
+    const eqLowMid = smoothed.lowMid;
+    const eqMid = smoothed.mid;
+    const eqHighMid = smoothed.highMid;
+    const eqPresence = smoothed.presence;
+    const eqBrilliance = smoothed.brilliance;
+    const eqAir = smoothed.air;
+    const eqAverage = eqBands.reduce((sum, value) => sum + value, 0) / Math.max(1, eqBands.length);
+    const eqEnergy = Math.max(0, Math.min(1, data.energy * (0.25 + (eqAverage / 50) * 0.75)));
 
     // Smoothly transition colors
     const lerpSpeed = 3.0 * delta;
     mat.uBaseColor1.lerp(t.uBaseColor1, lerpSpeed);
     mat.uBaseColor2.lerp(t.uBaseColor2, lerpSpeed);
+    mat.uFogColor.lerp(t.uFogColor, lerpSpeed);
     mat.uCoolCore.lerp(t.uCoolCore, lerpSpeed);
     mat.uCoolEdge.lerp(t.uCoolEdge, lerpSpeed);
     mat.uWarmCore.lerp(t.uWarmCore, lerpSpeed);
@@ -309,6 +380,7 @@ export function MapScene({
       <directionalLight position={[10, 20, 10]} intensity={1} />
       
       <OrbitControls 
+        ref={controlsRef}
         makeDefault 
         autoRotate 
         autoRotateSpeed={rotationSpeed}

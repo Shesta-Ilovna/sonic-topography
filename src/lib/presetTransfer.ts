@@ -4,6 +4,7 @@ import {
   BUILT_IN_THEME_IDS,
   CUSTOM_THEME_ID,
   CUSTOM_THEME_STORAGE_KEY,
+  DEFAULT_THEME_ID,
   THEME_ROTATION_STORAGE_KEY,
   defaultCustomThemeSettings,
   defaultThemeRotationSettings,
@@ -15,7 +16,9 @@ import {
 import { GROUND_EQ_STORAGE_KEY, normalizeGroundEqSettings, type StoredGroundEqSettings } from './groundEqSettings';
 import { TRIGGER_SETTINGS_STORAGE_KEY, normalizeTriggerConfig, type StoredTriggerSettings } from './triggerSettings';
 import { NETEASE_COOKIE_STORAGE_KEY, normalizeNeteaseCookie } from './neteaseCookie';
-
+import { readDisplaySettingsStorage, writeDisplaySettingsStorage, type DisplaySettings } from './displaySettings';
+import { readLyricsSettingsStorage, writeLyricsSettingsStorage, type LyricsSettings } from './lyricsSettings';
+import { QQ_COOKIE_STORAGE_KEY, normalizeQQCookie } from './qqCookie';
 export const PRESET_TRANSFER_VERSION = 1;
 export const PLAYLIST_STORAGE_KEY = 'sonic-topography-playlists-v1';
 
@@ -47,11 +50,14 @@ export interface PresetTransferPackage {
     activeThemeId: string;
     themeRotation: ThemeRotationSettings;
     neteaseCookie?: string;
+    qqCookie?: string;
+    displaySettings?: DisplaySettings;
+    lyricsSettings?: LyricsSettings;
   };
 }
 
 export interface CreatePresetTransferOptions {
-  includeNeteaseCookie?: boolean;
+  includeCookies?: boolean;
 }
 
 function readJsonStorage(key: string) {
@@ -101,7 +107,7 @@ export function normalizeTransferPlaylists(value: unknown): TransferPlaylist[] {
 
 function normalizeActiveThemeId(value: unknown) {
   const themeId = String(value || '');
-  return themeId === CUSTOM_THEME_ID || BUILT_IN_THEME_IDS.includes(themeId) ? themeId : 'nocturnal';
+  return themeId === CUSTOM_THEME_ID || BUILT_IN_THEME_IDS.includes(themeId) ? themeId : DEFAULT_THEME_ID;
 }
 
 function normalizeActiveCustomThemeId(value: unknown, customThemes: CustomThemeSettings[]) {
@@ -149,6 +155,16 @@ export function normalizePresetTransferPackage(value: unknown): PresetTransferPa
   const cookie = normalizeNeteaseCookie(input.data.neteaseCookie);
   if (cookie) normalized.data.neteaseCookie = cookie;
 
+  const qqCookie = normalizeQQCookie(input.data.qqCookie);
+  if (qqCookie) normalized.data.qqCookie = qqCookie;
+
+  if (input.data.displaySettings) {
+    normalized.data.displaySettings = input.data.displaySettings;
+  }
+  if (input.data.lyricsSettings) {
+    normalized.data.lyricsSettings = input.data.lyricsSettings;
+  }
+
   return normalized;
 }
 
@@ -174,12 +190,16 @@ export function createPresetTransferPackage(options: CreatePresetTransferOptions
       activeCustomThemeId,
       activeThemeId,
       themeRotation: normalizeThemeRotationSettings(readJsonStorage(THEME_ROTATION_STORAGE_KEY) || defaultThemeRotationSettings, availableThemeIds),
+      displaySettings: readDisplaySettingsStorage(),
+      lyricsSettings: readLyricsSettingsStorage(),
     },
   };
 
-  if (options.includeNeteaseCookie && typeof window !== 'undefined') {
+  if (options.includeCookies && typeof window !== 'undefined') {
     const cookie = normalizeNeteaseCookie(window.localStorage.getItem(NETEASE_COOKIE_STORAGE_KEY));
     if (cookie) presetPackage.data.neteaseCookie = cookie;
+    const qqCookie = normalizeQQCookie(window.localStorage.getItem(QQ_COOKIE_STORAGE_KEY));
+    if (qqCookie) presetPackage.data.qqCookie = qqCookie;
   }
 
   return normalizePresetTransferPackage(presetPackage);
@@ -198,10 +218,23 @@ export function writePresetTransferPackage(presetPackage: PresetTransferPackage)
   window.localStorage.setItem(ACTIVE_THEME_STORAGE_KEY, data.activeThemeId);
   window.localStorage.setItem(THEME_ROTATION_STORAGE_KEY, JSON.stringify(data.themeRotation));
 
+  if (data.displaySettings) {
+    writeDisplaySettingsStorage(data.displaySettings);
+  }
+  if (data.lyricsSettings) {
+    writeLyricsSettingsStorage(data.lyricsSettings);
+  }
+
   if (data.neteaseCookie) {
     window.localStorage.setItem(NETEASE_COOKIE_STORAGE_KEY, data.neteaseCookie);
   } else {
     window.localStorage.removeItem(NETEASE_COOKIE_STORAGE_KEY);
+  }
+
+  if (data.qqCookie) {
+    window.localStorage.setItem(QQ_COOKIE_STORAGE_KEY, data.qqCookie);
+  } else {
+    window.localStorage.removeItem(QQ_COOKIE_STORAGE_KEY);
   }
 
   return normalized;

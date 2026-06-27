@@ -28,6 +28,7 @@ export const MapShaderMaterial = shaderMaterial(
     }),
     uBaseColor1: new THREE.Color(0.01, 0.02, 0.04),
     uBaseColor2: new THREE.Color(0.03, 0.05, 0.09),
+    uFogColor: new THREE.Color(0.01, 0.02, 0.04),
     uCoolCore: new THREE.Color(0.0, 0.3, 1.0),
     uCoolEdge: new THREE.Color(0.6, 0.2, 1.0),
     uWarmCore: new THREE.Color(1.0, 0.2, 0.1),
@@ -221,6 +222,7 @@ export const MapShaderMaterial = shaderMaterial(
     // Theme Uniforms
     uniform vec3 uBaseColor1;
     uniform vec3 uBaseColor2;
+    uniform vec3 uFogColor;
     uniform vec3 uCoolCore;
     uniform vec3 uCoolEdge;
     uniform vec3 uWarmCore;
@@ -254,7 +256,7 @@ export const MapShaderMaterial = shaderMaterial(
       vec3 cBase2 = uBaseColor2;
       
       // Timbre determines palette
-      // Warmth drives red/orange, Brightness drives blue/cyan, Sharpness adds stark white clipping
+      // Warmth moves toward the warm color, brightness lifts toward the chosen cool color.
       vec3 coolCore = uCoolCore;
       vec3 coolEdge = uCoolEdge;
       
@@ -272,8 +274,9 @@ export const MapShaderMaterial = shaderMaterial(
       // Distance fade for contrast and brightness
       float distFade = 1.0 - smoothstep(40.0, 75.0, centerDist);
       
-      // Brightness lifts the black point of the glow, adding cyan/white wash
-      targetGlow = mix(targetGlow, vec3(0.4, 0.8, 1.0), uBrightness * 0.6);
+      // Brightness lifts the black point of the glow without overriding the custom cool color.
+      vec3 brightCool = mix(coolCore, vec3(1.0), 0.24);
+      targetGlow = mix(targetGlow, brightCool, uBrightness * 0.6);
       
       vec3 currentGlow = mix(cBase2, targetGlow, normElevation) * uGlowIntensity * distFade;
       
@@ -335,13 +338,16 @@ export const MapShaderMaterial = shaderMaterial(
       finalColor += uRippleColor * vRippleAnim.x * 0.6;
       finalColor += vec3(1.0, 1.0, 1.0) * vRippleAnim.y * 1.2;
       
-      // Aerial Perspective / Fog
+      // Aerial Perspective / Backdrop Blend
       float aerialFog = smoothstep(30.0, 65.0, vDistance);
       vec3 atmosphericColor = mix(cBase1, cBase2, 0.4);
-      finalColor = mix(finalColor, atmosphericColor, aerialFog * 0.5);
+      finalColor = mix(finalColor, atmosphericColor, aerialFog * 0.35);
       
-      // Distance fade out to transparent
+      // Distance fade out to the canvas backdrop color, then transparency reveals the app backdrop.
       float alphaFade = 1.0 - smoothstep(55.0, 78.0, vDistance);
+      float alphaBlend = 1.0 - alphaFade;
+      vec3 backdropColor = uFogColor;
+      finalColor = mix(finalColor, backdropColor, alphaBlend * 0.45);
       
       gl_FragColor = vec4(finalColor, alphaFade);
     }

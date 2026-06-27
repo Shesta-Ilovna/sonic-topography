@@ -1,7 +1,0 @@
-{
-  "name": "Sonic Topography",
-  "description": "A 3D digital music visualization map that reacts to audio frequencies with dynamic ripples and neon-lit topography.",
-  "requestFramePermissions": [
-    "display-capture"
-  ]
-}

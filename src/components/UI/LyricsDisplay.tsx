@@ -1,18 +1,24 @@
 import React, { useMemo, useEffect, useState, useRef } from 'react';
 import { parseLRC } from '../../lib/lyrics';
+import { engine } from '../../lib/AudioEngine';
+import { type LyricsSettings, type LyricStyleConfig, type LyricsStyleType } from '../../lib/lyricsSettings';
+
+export type MergedLyricsConfig = LyricStyleConfig & { style: LyricsStyleType };
 
 interface LyricsDisplayProps {
   lrcText: string;
   currentTime: number;
   accentHex?: string;
   isPlaying?: boolean;
+  lyricsSettings: MergedLyricsConfig;
 }
 
-export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ lrcText, currentTime, accentHex = '#00ffff', isPlaying = true }) => {
+export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ lrcText, currentTime, accentHex = '#00ffff', isPlaying = true, lyricsSettings }) => {
   const lyrics = useMemo(() => parseLRC(lrcText), [lrcText]);
   const [activeIndex, setActiveIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollWrapperRef = useRef<HTMLDivElement>(null);
+  const activeTextRef = useRef<HTMLDivElement>(null);
   const [offsetY, setOffsetY] = useState(0);
 
   useEffect(() => {
@@ -54,7 +60,68 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ lrcText, currentTi
      }
   }, [activeIndex, currentTime]);
 
+    const karaokeHex = lyricsSettings.followThemeKaraoke ? accentHex : lyricsSettings.karaokeColor;
+
+    useEffect(() => {
+    let animationFrameId: number;
+    const activeLine = lyrics[activeIndex];
+    const nextLine = lyrics[activeIndex + 1];
+    if (!activeLine || lyricsSettings.style === 'dynamic-bounce') return; // handled separately
+
+    const startTime = activeLine.time;
+    const duration = nextLine ? nextLine.time - startTime : 4;
+
+    const updateKaraoke = () => {
+       if (activeTextRef.current && engine.audioElement) {
+          const currentAudioTime = engine.audioElement.currentTime;
+          let progress = 0;
+          if (currentAudioTime >= startTime) {
+             progress = Math.min(1, (currentAudioTime - startTime) / duration);
+          }
+          
+          const container = activeTextRef.current.firstElementChild as HTMLElement;
+          if (container) {
+             const spans = container.children;
+             const totalChars = spans.length;
+             if (totalChars > 0) {
+                 const fadeWindow = Math.max(3, totalChars * 0.15);
+                 const currentFloatIndex = progress * (totalChars + fadeWindow);
+                 for (let i = 0; i < totalChars; i++) {
+                     const span = spans[i] as HTMLElement;
+                     const diff = currentFloatIndex - i;
+                     let opacity = 0;
+                     if (diff >= fadeWindow) opacity = 1;
+                     else if (diff <= 0) opacity = 0;
+                     else opacity = diff / fadeWindow;
+                     
+                     const mixPercentage = (opacity * 100).toFixed(1);
+                     const newColor = `color-mix(in srgb, ${karaokeHex} ${mixPercentage}%, ${lyricsSettings.fontColor})`;
+                     if (span.style.color !== newColor) {
+                         span.style.color = newColor;
+                     }
+                 }
+             }
+          }
+       }
+       animationFrameId = requestAnimationFrame(updateKaraoke);
+    };
+    updateKaraoke();
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [activeIndex, lyrics, lyricsSettings, accentHex]);
+
   if (lyrics.length === 0) return null;
+
+  if (lyricsSettings.style === 'dynamic-bounce') {
+     return (
+        <DynamicBounceLyrics 
+           lyrics={lyrics} 
+           activeIndex={activeIndex} 
+           lyricsSettings={lyricsSettings} 
+           accentHex={accentHex} 
+           isPlaying={isPlaying} 
+        />
+     );
+  }
 
   return (
     <div 
@@ -108,28 +175,145 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ lrcText, currentTi
                      )}
                   </div>
 
-                  {/* Lyric Text */}
+                  {/* Lyric Text Container */}
                   <div
-                    className={`transition-all duration-700 ease-out whitespace-pre-wrap font-serif tracking-[0.05em] drop-shadow-xl ${
+                    ref={isActive ? activeTextRef : null}
+                    className={`relative whitespace-pre-wrap ${lyricsSettings.fontFamily === 'serif' ? 'font-serif' : 'font-sans'} tracking-[0.05em] ${
                         isActive 
-                            ? 'text-white text-[32px] font-medium opacity-100' 
+                            ? 'font-medium opacity-100' 
                             : isPast
-                                ? 'text-white/20 text-[18px] font-normal opacity-40 blur-[1px]' 
-                                : 'text-white/40 text-[18px] font-normal opacity-50'
+                                ? 'font-normal opacity-40 blur-[1px]' 
+                                : 'font-normal opacity-50'
                     }`}
                     style={{
-                        transform: isActive ? 'translateY(0) scale(1.05)' : 'translateY(0) scale(1)',
+                        fontSize: `${lyricsSettings.activeFontSize}px`,
+                        transform: isActive ? 'translateY(0) scale(1.05)' : `translateY(0) scale(${lyricsSettings.inactiveFontSize / lyricsSettings.activeFontSize})`,
                         transformOrigin: 'left center',
-                        textShadow: isActive ? `0 0 20px ${accentHex}66, 0 2px 4px rgba(0,0,0,0.8)` : '0 2px 4px rgba(0,0,0,0.8)'
+                        transition: 'transform 700ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 700ms ease-out, filter 700ms ease-out',
+                        willChange: 'transform, opacity',
                     }}
                   >
-                    {line.text}
+                    {/* Base text with shadow */}
+                    <div
+                      style={{
+                        color: lyricsSettings.fontColor,
+                        textShadow: isActive ? `0 0 20px ${lyricsSettings.followThemeGlow ? accentHex : lyricsSettings.glowColor}66, 0 2px 4px rgba(0,0,0,0.8)` : '0 2px 4px rgba(0,0,0,0.8)',
+                        transition: 'text-shadow 700ms ease-out'
+                      }}
+                    >
+                        {line.text.split('').map((char: string, i: number) => (
+                          <span key={i} style={{ color: lyricsSettings.fontColor }}>{char}</span>
+                        ))}
+                    </div>
                   </div>
                 </div>
               );
             })}
         </div>
       </div>
+    </div>
+  );
+};
+
+const DynamicBounceLyrics: React.FC<{
+  lyrics: any[];
+  activeIndex: number;
+  lyricsSettings: MergedLyricsConfig;
+  accentHex: string;
+  isPlaying: boolean;
+}> = ({ lyrics, activeIndex, lyricsSettings, accentHex, isPlaying }) => {
+  const activeTextRef = useRef<HTMLDivElement>(null);
+  const activeLine = lyrics[activeIndex];
+  const nextLine = lyrics[activeIndex + 1];
+
+  const karaokeHex = lyricsSettings.followThemeKaraoke ? accentHex : lyricsSettings.karaokeColor;
+
+  useEffect(() => {
+    let animationFrameId: number;
+    if (!activeLine) return;
+    
+    const startTime = activeLine.time;
+    const duration = nextLine ? nextLine.time - startTime : 4;
+
+    const updateEffects = () => {
+       if (activeTextRef.current && engine.audioElement) {
+          // 1. Bounce effect
+          const data = engine.getAudioData();
+          const energy = data[lyricsSettings.triggerBand as keyof typeof data] || 0;
+          const scale = 1.0 + (energy * 0.15);
+          activeTextRef.current.style.transform = `scale(${scale})`;
+
+          // 2. Karaoke highlight effect
+          const currentAudioTime = engine.audioElement.currentTime;
+          let progress = 0;
+          if (currentAudioTime >= startTime) {
+             progress = Math.min(1, (currentAudioTime - startTime) / duration);
+          }
+          
+          const container = activeTextRef.current.firstElementChild as HTMLElement;
+          if (container) {
+             const spans = container.children;
+             const totalChars = spans.length;
+             if (totalChars > 0) {
+                 const fadeWindow = Math.max(3, totalChars * 0.15);
+                 const currentFloatIndex = progress * (totalChars + fadeWindow);
+                 for (let i = 0; i < totalChars; i++) {
+                     const span = spans[i] as HTMLElement;
+                     const diff = currentFloatIndex - i;
+                     let opacity = 0;
+                     if (diff >= fadeWindow) opacity = 1;
+                     else if (diff <= 0) opacity = 0;
+                     else opacity = diff / fadeWindow;
+                     
+                     const mixPercentage = (opacity * 100).toFixed(1);
+                     const newColor = `color-mix(in srgb, ${karaokeHex} ${mixPercentage}%, ${lyricsSettings.fontColor})`;
+                     if (span.style.color !== newColor) {
+                         span.style.color = newColor;
+                     }
+                 }
+             }
+          }
+       }
+       animationFrameId = requestAnimationFrame(updateEffects);
+    };
+    updateEffects();
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [lyricsSettings.triggerBand, activeIndex, lyrics, lyricsSettings, accentHex, activeLine, nextLine]);
+
+  if (!activeLine || activeIndex === -1) return null;
+
+  const positionClasses = {
+    'top-left': 'top-20 left-16 items-start justify-start text-left',
+    'top-center': 'top-20 left-1/2 -translate-x-1/2 items-center justify-start text-center',
+    'top-right': 'top-20 right-16 items-end justify-start text-right',
+    'center-left': 'top-1/2 -translate-y-1/2 left-16 items-start justify-center text-left',
+    'center': 'top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 items-center justify-center text-center',
+    'center-right': 'top-1/2 -translate-y-1/2 right-16 items-end justify-center text-right',
+    'bottom-left': 'bottom-[20vh] left-16 items-start justify-end text-left',
+    'bottom-center': 'bottom-[20vh] left-1/2 -translate-x-1/2 items-center justify-end text-center',
+    'bottom-right': 'bottom-[20vh] right-16 items-end justify-end text-right',
+  }[lyricsSettings.position] || 'top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 items-center justify-center text-center';
+
+  return (
+    <div className={`absolute z-40 flex flex-col pointer-events-none select-none transition-all duration-1000 ease-out ${isPlaying ? 'opacity-100 blur-none' : 'opacity-0 blur-sm'} ${positionClasses}`}>
+      <div
+        ref={activeTextRef}
+        className={`relative whitespace-pre-wrap ${lyricsSettings.fontFamily === 'serif' ? 'font-serif' : 'font-sans'} tracking-[0.05em] font-medium transition-all duration-700 ease-out`}
+        style={{
+          fontSize: `${lyricsSettings.activeFontSize}px`,
+          willChange: 'transform'
+        }}
+      >
+        {/* Base text with shadow */}
+        <div style={{
+          color: lyricsSettings.fontColor,
+          textShadow: `0 0 30px ${lyricsSettings.followThemeGlow ? accentHex : lyricsSettings.glowColor}99, 0 4px 10px rgba(0,0,0,0.9)`
+          }}>
+            {activeLine.text.split('').map((char: string, i: number) => (
+              <span key={i} style={{ color: lyricsSettings.fontColor }}>{char}</span>
+            ))}
+          </div>
+        </div>
     </div>
   );
 };

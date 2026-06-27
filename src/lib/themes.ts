@@ -4,6 +4,8 @@ export interface CustomThemeSettings {
   id: string;
   name: string;
   background: string;
+  fog: string;
+  fogLinkedToBackground: boolean;
   cool: string;
   warm: string;
   accent: string;
@@ -17,6 +19,7 @@ export interface ThemeColors {
   id: string;
   uBaseColor1: THREE.Color;
   uBaseColor2: THREE.Color;
+  uFogColor: THREE.Color;
   uCoolCore: THREE.Color;
   uCoolEdge: THREE.Color;
   uWarmCore: THREE.Color;
@@ -34,7 +37,8 @@ export interface ThemeRotationSettings {
 }
 
 export const CUSTOM_THEME_ID = 'custom';
-export const BUILT_IN_THEME_IDS = ['nocturnal', 'neon-tokyo', 'cyber-forest', 'minimal-monochrome'];
+export const BUILT_IN_THEME_IDS = ['ink-wash', 'nocturnal', 'neon-tokyo', 'cyber-forest', 'minimal-monochrome'];
+export const DEFAULT_THEME_ID = 'nocturnal';
 export const CUSTOM_THEME_STORAGE_KEY = 'sonic-topography-custom-themes-v2';
 export const LEGACY_CUSTOM_THEME_STORAGE_KEY = 'sonic-topography-custom-theme-v1';
 export const ACTIVE_CUSTOM_THEME_STORAGE_KEY = 'sonic-topography-active-custom-theme-v1';
@@ -45,6 +49,8 @@ export const defaultCustomThemeSettings: CustomThemeSettings = {
   id: 'custom-default',
   name: '自定义主题 1',
   background: '#07111f',
+  fog: '#07111f',
+  fogLinkedToBackground: true,
   cool: '#38bdf8',
   warm: '#f97316',
   accent: '#22d3ee',
@@ -84,10 +90,16 @@ function clampRotationInterval(value: unknown) {
 
 export function normalizeCustomThemeSettings(value: Partial<CustomThemeSettings> | null | undefined): CustomThemeSettings {
   const legacyValue = value as (Partial<CustomThemeSettings> & { showThemeButton?: unknown }) | null | undefined;
+  const background = normalizeHexColor(value?.background, defaultCustomThemeSettings.background);
+  const fogLinkedToBackground = value?.fogLinkedToBackground === undefined
+    ? true
+    : Boolean(value.fogLinkedToBackground);
   return {
     id: String(value?.id || defaultCustomThemeSettings.id),
     name: String(value?.name || defaultCustomThemeSettings.name).trim() || defaultCustomThemeSettings.name,
-    background: normalizeHexColor(value?.background, defaultCustomThemeSettings.background),
+    background,
+    fog: fogLinkedToBackground ? background : normalizeHexColor(value?.fog, background),
+    fogLinkedToBackground,
     cool: normalizeHexColor(value?.cool, defaultCustomThemeSettings.cool),
     warm: normalizeHexColor(value?.warm, defaultCustomThemeSettings.warm),
     accent: normalizeHexColor(value?.accent, defaultCustomThemeSettings.accent),
@@ -149,10 +161,10 @@ export function writeActiveCustomThemeStorage(presetId: string) {
 }
 
 export function readActiveThemeStorage() {
-  if (typeof window === 'undefined') return 'nocturnal';
+  if (typeof window === 'undefined') return DEFAULT_THEME_ID;
 
   const stored = window.localStorage.getItem(ACTIVE_THEME_STORAGE_KEY) || '';
-  return stored === CUSTOM_THEME_ID || BUILT_IN_THEME_IDS.includes(stored) ? stored : 'nocturnal';
+  return stored === CUSTOM_THEME_ID || BUILT_IN_THEME_IDS.includes(stored) ? stored : DEFAULT_THEME_ID;
 }
 
 export function writeActiveThemeStorage(themeId: string) {
@@ -197,6 +209,7 @@ export function writeThemeRotationStorage(settings: ThemeRotationSettings, avail
 export function createCustomThemeColors(settings: CustomThemeSettings): ThemeColors {
   const normalized = normalizeCustomThemeSettings(settings);
   const base = new THREE.Color(normalized.background);
+  const fog = new THREE.Color(normalized.fog);
   const cool = new THREE.Color(normalized.cool);
   const warm = new THREE.Color(normalized.warm);
 
@@ -205,6 +218,7 @@ export function createCustomThemeColors(settings: CustomThemeSettings): ThemeCol
     id: CUSTOM_THEME_ID,
     uBaseColor1: base.clone(),
     uBaseColor2: base.clone().lerp(new THREE.Color(0xffffff), 0.12),
+    uFogColor: fog.clone(),
     uCoolCore: cool.clone(),
     uCoolEdge: cool.clone().lerp(base, 0.35),
     uWarmCore: warm.clone(),
@@ -217,11 +231,27 @@ export function createCustomThemeColors(settings: CustomThemeSettings): ThemeCol
 }
 
 export const themes: Record<string, ThemeColors> = {
+  'ink-wash': {
+    name: 'Ink Wash',
+    id: 'ink-wash',
+    uBaseColor1: new THREE.Color(1.0, 1.0, 1.0),
+    uBaseColor2: new THREE.Color(1.0, 1.0, 1.0).lerp(new THREE.Color(0xffffff), 0.12),
+    uFogColor: new THREE.Color(1.0, 1.0, 1.0),
+    uCoolCore: new THREE.Color(0.0, 0.0, 0.0),
+    uCoolEdge: new THREE.Color(0.0, 0.0, 0.0).lerp(new THREE.Color(1.0, 1.0, 1.0), 0.35),
+    uWarmCore: new THREE.Color(0.0, 0.0, 0.0),
+    uWarmEdge: new THREE.Color(0.0, 0.0, 0.0).lerp(new THREE.Color(1.0, 1.0, 1.0), 0.35),
+    uRippleColor: new THREE.Color(0.66, 0.74, 0.76),
+    uGlowIntensity: 1.1,
+    uRotationSpeed: 0.5,
+    uShowPlayerPanel: true,
+  },
   'nocturnal': {
     name: 'Nocturnal',
     id: 'nocturnal',
     uBaseColor1: new THREE.Color(0.01, 0.02, 0.04),
     uBaseColor2: new THREE.Color(0.03, 0.05, 0.09),
+    uFogColor: new THREE.Color(0.01, 0.02, 0.04),
     uCoolCore: new THREE.Color(0.0, 0.3, 1.0),
     uCoolEdge: new THREE.Color(0.6, 0.2, 1.0),
     uWarmCore: new THREE.Color(1.0, 0.2, 0.1),
@@ -236,6 +266,7 @@ export const themes: Record<string, ThemeColors> = {
     id: 'neon-tokyo',
     uBaseColor1: new THREE.Color(0.01, 0.005, 0.02),
     uBaseColor2: new THREE.Color(0.04, 0.01, 0.06),
+    uFogColor: new THREE.Color(0.01, 0.005, 0.02),
     uCoolCore: new THREE.Color(1.0, 0.1, 0.6), // Hot pink
     uCoolEdge: new THREE.Color(0.6, 0.1, 1.0), // Deep purple
     uWarmCore: new THREE.Color(0.1, 1.0, 0.8), // Mint cyan
@@ -250,6 +281,7 @@ export const themes: Record<string, ThemeColors> = {
     id: 'cyber-forest',
     uBaseColor1: new THREE.Color(0.01, 0.02, 0.01),
     uBaseColor2: new THREE.Color(0.02, 0.05, 0.02),
+    uFogColor: new THREE.Color(0.01, 0.02, 0.01),
     uCoolCore: new THREE.Color(0.1, 1.0, 0.5), // Bright emerald
     uCoolEdge: new THREE.Color(0.05, 0.5, 0.3), // Dark green
     uWarmCore: new THREE.Color(0.8, 1.0, 0.1), // Lime yellow
@@ -264,6 +296,7 @@ export const themes: Record<string, ThemeColors> = {
     id: 'minimal-monochrome',
     uBaseColor1: new THREE.Color(0.02, 0.02, 0.02),
     uBaseColor2: new THREE.Color(0.06, 0.06, 0.06),
+    uFogColor: new THREE.Color(0.02, 0.02, 0.02),
     uCoolCore: new THREE.Color(0.9, 0.9, 0.9), // Bright silver
     uCoolEdge: new THREE.Color(0.4, 0.4, 0.4), // Mid grey
     uWarmCore: new THREE.Color(1.0, 1.0, 1.0), // Pure white

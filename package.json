@@ -1,18 +1,67 @@
 {
   "name": "sonic-topography",
+  "productName": "Sonic Topography",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "A desktop music player and 3D audio visualizer.",
+  "author": "Sonic Topography",
   "type": "module",
+  "main": "desktop/main.js",
   "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
+    "dev": "vite --port=3000 --host=127.0.0.1",
+    "dev:electron": "node scripts/dev-electron.mjs",
     "build": "vite build",
-    "build:go-embed": "node scripts/prepare-go-embed.mjs",
-    "build:go-exe": "npm run build && npm run build:go-embed && go build -o SonicTopography.exe ./cmd/sonic-topography",
-    "build:wallpaper": "vite build --base ./ --outDir dist-wallpaper --emptyOutDir false && node scripts/prepare-wallpaper.mjs",
-    "start": "node local-server.mjs",
+    "build:electron": "npm run build && electron-builder --win nsis",
+    "build:electron:dir": "npm run build && electron-builder --win dir",
+    "start": "electron .",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
+  },
+  "build": {
+    "appId": "com.sonic-topography.desktop",
+    "productName": "Sonic Topography",
+    "directories": {
+      "output": "release"
+    },
+    "electronDist": "node_modules/electron/dist",
+    "files": [
+      "desktop/**/*",
+      "dist/**/*",
+      "server/**/*",
+      "local-server.mjs",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "icon": "build/icon.ico",
+      "executableName": "SonicTopography",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "shortcutName": "Sonic Topography",
+      "artifactName": "SonicTopography-${version}-Setup.${ext}"
+    }
+  },
+  "sonicTopography": {
+    "update": {
+      "provider": "github",
+      "owner": "",
+      "repo": ""
+    }
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -40,6 +89,8 @@
     "@types/node": "^22.14.0",
     "@types/three": "^0.184.1",
     "autoprefixer": "^10.4.21",
+    "electron": "^42.5.0",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",

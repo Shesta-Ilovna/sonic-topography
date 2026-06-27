@@ -19,6 +19,7 @@ import {
   type CustomThemeSettings,
   type ThemeRotationSettings,
 } from './lib/themes';
+import { readLyricsSettingsStorage, writeLyricsSettingsStorage, type LyricsSettings } from './lib/lyricsSettings';
 
 function readInitialCustomThemeState() {
   const presets = readCustomThemeStorage();
@@ -37,9 +38,15 @@ export default function App() {
   const activeCustomTheme = customThemes.find((preset) => preset.id === activeCustomThemeId) || customThemes[0];
   const availableRotationThemeIds = [...BUILT_IN_THEME_IDS, ...customThemes.map((preset) => preset.id)];
   const [themeRotation, setThemeRotation] = useState<ThemeRotationSettings>(() => readThemeRotationStorage(availableRotationThemeIds));
-  const resolvedTheme = theme === CUSTOM_THEME_ID ? createCustomThemeColors(activeCustomTheme) : (themes[theme] || themes['nocturnal']);
-  const sceneRotationSpeed = activeCustomTheme?.rotationSpeed ?? resolvedTheme.uRotationSpeed;
-  const showPlayerPanel = activeCustomTheme?.showPlayerPanel ?? resolvedTheme.uShowPlayerPanel;
+  const [lyricsSettings, setLyricsSettings] = useState<LyricsSettings>(readLyricsSettingsStorage);
+  
+  const resolvedTheme = theme === CUSTOM_THEME_ID ? createCustomThemeColors(activeCustomTheme) : (themes[theme] || themes['ink-wash']);
+  const sceneRotationSpeed = theme === CUSTOM_THEME_ID
+    ? activeCustomTheme?.rotationSpeed ?? resolvedTheme.uRotationSpeed
+    : resolvedTheme.uRotationSpeed;
+  const showPlayerPanel = theme === CUSTOM_THEME_ID
+    ? activeCustomTheme?.showPlayerPanel ?? resolvedTheme.uShowPlayerPanel
+    : resolvedTheme.uShowPlayerPanel;
 
   const updateTheme = (themeId: string) => {
     setTheme(themeId);
@@ -97,11 +104,16 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [themeRotation, theme, activeCustomThemeId, customThemes]);
 
+  const updateLyricsSettings = (newSettings: LyricsSettings) => {
+    setLyricsSettings(newSettings);
+    writeLyricsSettingsStorage(newSettings);
+  };
+
   // Convert THREE.Color to css strings
-  const bgDark = `#${resolvedTheme.uBaseColor1.getHexString()}`;
+  const backdropColor = `#${resolvedTheme.uFogColor.getHexString()}`;
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden text-[#94a3b8] font-sans selection:bg-blue-500/30 transition-colors duration-1000" style={{ backgroundColor: bgDark }}>
+    <div className="relative min-h-[100dvh] w-screen overflow-hidden text-[#94a3b8] font-sans selection:bg-blue-500/30 transition-colors duration-1000" style={{ backgroundColor: backdropColor }}>
       <UI
         theme={theme}
         resolvedTheme={resolvedTheme}
@@ -114,6 +126,8 @@ export default function App() {
         onCustomThemesChange={updateCustomThemes}
         onThemeRotationChange={updateThemeRotation}
         onGroundEqSettingsChange={updateGroundEqSettings}
+        lyricsSettings={lyricsSettings}
+        onLyricsSettingsChange={updateLyricsSettings}
       />
       <div className="absolute inset-0 z-0">
         <Canvas camera={{ position: [35, 25, 35], fov: 45 }}>

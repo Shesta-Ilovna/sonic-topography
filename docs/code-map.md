@@ -1,438 +1,272 @@
-﻿# Sonic Topography Code Map
+# Sonic Topography Code Map
 
-This file is the project index for future code lookup, edits, tests, and reviews. It is organized by change target.
+This file is the project index for future code changes, debugging, testing, and review.
 
-Last full verification commit: `unknown`
+Last fully verified commit: `unknown`
 
 ## Start Here
 
 | Goal | Main files | Tests | Verification |
 | --- | --- | --- | --- |
-| Change player, Demo, upload, or lyrics display | `src/components/UI/UI.tsx` | No automated tests yet | `npm run lint`; `npm run build` |
-| Change visual themes or custom colors | `src/lib/themes.ts`; `src/App.tsx`; `src/components/UI/UI.tsx`; `src/components/AudioVisualizer/MapScene.tsx`; `src/components/AudioVisualizer/CustomShaderMaterial.ts` | No automated tests yet | `npm run lint`; `npm run build`; browser Settings -> Custom Color QA |
-| Change ground EQ visual response | `src/lib/groundEqSettings.ts`; `src/components/UI/UI.tsx`; `src/components/AudioVisualizer/MapScene.tsx`; `src/components/AudioVisualizer/CustomShaderMaterial.ts` | No automated tests yet | `npm run lint`; `npm run build`; browser Settings -> Ground EQ QA |
-| Change Netease search/import, browser Cookie, cloud library, or daily recommendations | `src/components/UI/UI.tsx`; `src/lib/neteaseCookie.ts`; `vite.config.ts`; `local-server.mjs`; `package.json` | `src/lib/neteaseCookie.test.ts` | `npx tsx src/lib/neteaseCookie.test.ts`; `npm run lint`; `npm run build`; `/api/netease/cookie`, `/api/netease/search`, `/api/netease/liked`, `/api/netease/playlists`, and `/api/netease/daily-recommend` smoke tests |
-| Change one-click packaged startup or Go EXE packaging | `local-server.mjs`; `cmd/sonic-topography/main.go`; `internal/sonicserver/server.go`; `start-sonic-topography.bat`; `package.json` | `internal/sonicserver/server_test.go` | `npm run build`; `npm start`; `go test ./...`; `npm run build:go-exe`; `http://127.0.0.1:4173` smoke test |
-| Package Wallpaper Engine web wallpaper | `package.json`; `scripts/prepare-wallpaper.mjs`; `src/lib/AudioEngine.ts`; `src/components/UI/UI.tsx` | No automated tests yet | `npm run lint`; `npm run build:wallpaper`; import `dist-wallpaper/index.html` in Wallpaper Engine |
-| Change saved playlists | `src/components/UI/UI.tsx`; `local-server.mjs`; `vite.config.ts` | No automated tests yet | `npm run lint`; playlist API persistence QA |
-| Change preset import/export | `src/lib/presetTransfer.ts`; `src/components/UI/UI.tsx`; `docs/code-map.md` | `src/lib/presetTransfer.test.ts` | `npx tsx src/lib/presetTransfer.test.ts`; `npm run lint`; `npm run build`; browser Settings -> import/export QA |
-| Change playback queue or skip mode | `src/components/UI/UI.tsx` | No automated tests yet | `npm run lint`; browser playlist skip/shuffle QA |
-| Change audio playback, analysis, or triggers | `src/lib/AudioEngine.ts` | No automated tests yet | `npm run lint`; browser playback QA |
-| Change trigger settings persistence or meteor trigger spacing | `src/lib/AudioEngine.ts`; `src/lib/triggerSettings.ts`; `src/components/AudioVisualizer/MapScene.tsx`; `src/components/UI/UI.tsx` | `src/lib/triggerSettings.test.ts` | `npx tsx src/lib/triggerSettings.test.ts`; `npm run lint`; `npm run build`; browser Settings panel QA |
-| Change LRC parsing | `src/lib/lyrics.ts`; `src/components/UI/LyricsDisplay.tsx` | No automated tests yet | `npm run lint`; QA with an `.lrc` file |
-| Change audio metadata reading | `src/lib/metadata.ts` | No automated tests yet | `npm run lint`; QA with audio containing ID3 title/artist/lyrics |
-| Change 3D visualizer scene | `src/components/AudioVisualizer/MapScene.tsx`; `src/components/AudioVisualizer/CustomShaderMaterial.ts` | No automated tests yet | `npm run build`; browser visual QA |
+| Electron shell, window chrome, login bridge, installer config | `desktop/main.js`, `desktop/preload.cjs`, `scripts/dev-electron.mjs`, `package.json` | `src/lib/neteaseCookie.test.ts`, `src/lib/qqCookie.test.ts` | `npm run dev:electron`, `npm run build:electron:dir`, `npm run build:electron` |
+| Player UI, sidebar, search, cloud music panel | `src/components/UI/UI.tsx`, `src/index.css`, `src/App.tsx` | `src/lib/triggerSettings.test.ts`, `src/lib/presetTransfer.test.ts` | `npm run lint`, `npm run build`, `npm run dev:electron` |
+| Netease API, cookies, liked songs, playlists, daily recommendations | `vite.config.ts`, `local-server.mjs`, `server/netease-library.mjs`, `src/lib/neteaseCookie.ts` | `src/lib/neteaseCookie.test.ts`, `src/lib/neteasePlaylist.test.ts` | `npx tsx src/lib/neteaseCookie.test.ts`, `npx tsx src/lib/neteasePlaylist.test.ts`, `npm run build` |
+| QQ Music API, cookies, search, personal playlists, lyrics, audio proxy | `server/qq-music.mjs`, `vite.config.ts`, `local-server.mjs`, `src/lib/qqCookie.ts` | `src/lib/qqCookie.test.ts`, `src/lib/qqMusicLibrary.test.ts` | `npx tsx src/lib/qqCookie.test.ts`, `npx tsx src/lib/qqMusicLibrary.test.ts`, `npm run build` |
+| Update checks and installer download | `server/update-service.mjs`, `src/lib/updateSource.ts`, `desktop/main.js`, `package.json` | `src/lib/updateSource.test.ts` | `npx tsx src/lib/updateSource.test.ts`, `npm run build:electron:dir` |
+| Preset import/export | `src/lib/presetTransfer.ts`, `src/components/UI/UI.tsx` | `src/lib/presetTransfer.test.ts` | `npx tsx src/lib/presetTransfer.test.ts`, `npm run lint` |
+| Theme colors, backdrop lock, and shader palette | `src/lib/themes.ts`, `src/App.tsx`, `src/components/UI/UI.tsx`, `src/components/AudioVisualizer/MapScene.tsx`, `src/components/AudioVisualizer/CustomShaderMaterial.ts` | `src/lib/themes.test.ts`, `src/lib/themeShader.test.ts`, `src/lib/presetTransfer.test.ts` | `npx tsx src/lib/themes.test.ts`, `npx tsx src/lib/themeShader.test.ts`, `npm run build`, manual custom theme color check |
+| Audio analysis, ground effects mixer, and 3D terrain | `src/lib/AudioEngine.ts`, `src/lib/groundEqSettings.ts`, `src/components/AudioVisualizer/MapScene.tsx`, `src/components/AudioVisualizer/CustomShaderMaterial.ts` | `src/lib/audioFrameCache.test.ts`, `src/lib/groundEqSettings.test.ts`, `src/lib/presetTransfer.test.ts` | `npx tsx src/lib/audioFrameCache.test.ts`, `npx tsx src/lib/groundEqSettings.test.ts`, `npx tsx src/lib/presetTransfer.test.ts`, `npm run build`, manual playback in Electron |
 
 ## End-To-End Flow
 
 ```text
-src/main.tsx
--> src/App.tsx
--> UI upload or Demo click
--> src/components/UI/UI.tsx
--> src/lib/AudioEngine.ts loads audio and emits spectrum data
--> src/components/AudioVisualizer/MapScene.tsx reads spectrum and trigger events
--> src/components/AudioVisualizer/CustomShaderMaterial.ts renders terrain waves
+npm run dev:electron
+-> scripts/dev-electron.mjs starts Vite
+-> Electron loads http://127.0.0.1:3000
+-> React/CSS hot reload; main/preload/server changes need Electron restart
 ```
 
-Demo flow:
-
 ```text
-public/demo.mp3 + public/demo.lrc
--> UI.loadDemo()
--> src/lib/metadata.ts reads audio title, artist, embedded lyrics
--> same-name LRC wins, otherwise embedded lyrics are used
--> AudioEngine.loadUrl('/demo.mp3')
+Netease playlist loading
+UI cloud panel
+-> /api/netease/playlists
+-> /api/netease/playlist?id=<id>&limit=all
+-> vite.config.ts in dev or local-server.mjs in packaged mode
+-> getPlaylistPlayableSongs()
+-> playlist detail may expose only a partial playlist.tracks array
+-> server/netease-library.mjs reads playlist.trackIds as the source of truth
+-> fetchNeteaseSongDetails() batches /api/song/detail for the full track list
+-> UI shows "loaded X / total Y songs"
 ```
 
-Upload flow:
-
 ```text
-input[type=file] or drag and drop
--> UI.processFiles()
--> detect audio/*, .mp3, .wav, .flac, and .lrc
--> FileReader reads LRC or metadata.ts tries embedded lyrics
--> AudioEngine.loadFile(file)
+QQ login and library
+Settings -> Account -> QQ Music -> official y.qq.com QR login window
+-> desktop/main.js reads QQ cookies
+-> UI stores cookie and syncs PUT /api/qq/login/cookie
+-> /api/qq/user/playlists
+-> /api/qq/playlist/tracks?id=<id>&limit=all
+-> server/qq-music.mjs maps songs to the shared NeteaseSong shape with provider: 'qq'
 ```
 
-Netease search flow:
-
 ```text
-Settings -> Netease Cookie -> open music.163.com and copy a browser Cookie manually
--> src/lib/neteaseCookie.ts normalizes and saves Cookie in browser localStorage
--> PUT /api/netease/cookie syncs Cookie to the local proxy memory for audio tag requests
--> UI Search button
--> UI.searchNetease()
--> request includes X-Netease-Cookie only after the browser Cookie validates
--> no validated Cookie: the UI does not send `limit`, matching the GitHub e3b8c83 Search panel call
--> Vite middleware /api/netease/search
--> no Cookie: use the GitHub baseline anonymous search path from e3b8c83
--> anonymous path defaults to limit=12, caps resultLimit at 20, and calls only music.163.com/api/search/get/web with upstream limit min(resultLimit * 3, 60)
--> valid Cookie: use account-aware search with official Cookie, cloudsearch fallback, transient 400 retries, and upstream limit capped at 80
--> search cache key includes either `anonymous-baseline` or the normalized Cookie, so anonymous and account results cannot mix
--> Vite checks each candidate with /api/song/enhance/player/url using the same anonymous/account permission context
--> playable URL cache avoids repeated candidate checks
--> unplayable candidates are filtered out
--> response includes rawCount and filteredCount so the UI can distinguish "no songs found" from "songs found but none playable"
--> rawCount=0 results are not cached, because anonymous upstream search can occasionally return empty responses
--> user selects a result
--> /api/netease/lyric loads LRC
--> /api/netease/url checks playback availability using anonymous mode when no validated Cookie is sent, or account mode when it is sent
--> /api/netease/audio proxies playable audio into AudioEngine.loadUrl() with the same permission context
-```
-
-Netease cloud library flow:
-
-```text
-Settings -> Netease Cookie -> save Cookie
--> PUT /api/netease/cookie validates Cookie with music.163.com account API
--> browser refresh reads localStorage and immediately re-syncs the saved Cookie to the local proxy
--> UI shows left-side Netease entry only when valid is true
--> click Netease
--> secondary menu offers Liked, Playlists, Daily Recommendations
--> before each cloud menu request, UI re-syncs the browser-saved Cookie so a restarted proxy can recover
--> Liked calls /api/netease/liked
--> Playlists calls /api/netease/playlists, then /api/netease/playlist?id=...
--> Daily Recommendations calls /api/netease/daily-recommend
--> only a 401 cloud response means the Cookie is invalid; 5xx/network failures stay as transient load failures
--> proxy filters all song lists through playable URL checks
--> user clicks a playable song
--> loadNeteaseSong(song, currentCloudSongs) plays it with queue skip support
--> plus button adds the song to the local Favorites playlist
-```
-
-Saved playlist flow:
-
-```text
-Search result plus button
--> choose existing playlist or create a new playlist
--> UI state updates
--> PUT /api/playlists persists playlists to data/playlists.json
--> localStorage key sonic-topography-playlists-v1 is a browser fallback/migration source
--> Playlist side-rail entry opens saved playlists after reload/restart
--> selecting a saved song reuses loadNeteaseSong()
--> trash buttons remove songs or whole playlists from localStorage-backed state
-```
-
-Playback queue flow:
-
-```text
-Search result or playlist song click
--> loadNeteaseSong(song, queue)
--> playQueue/currentSongId update
--> SkipBack/SkipForward calls playFromQueue()
--> playMode sequence uses adjacent index; shuffle picks a different random index
--> audio ended event advances to next queued song
--> unavailable or failed songs skip to the next queued song
-```
-
-Trigger settings flow:
-
-```text
-src/components/UI/UI.tsx loads src/lib/triggerSettings.ts
--> browser localStorage key sonic-topography-trigger-settings-v1
--> saved Pulse/Meteor values apply to engine.pulseTrigger and engine.meteorTrigger on page load
--> Settings panel changes update engine trigger configs
--> UI snapshots both trigger configs back into browser localStorage
--> refresh keeps the same browser settings; a packaged copy opened by another user starts with that user's own browser storage
-```
-
-Ground EQ flow:
-
-```text
-Settings -> Ground EQ edits a 16-point curve from low frequency to high frequency
--> src/lib/groundEqSettings.ts stores the curve in browser localStorage key sonic-topography-ground-eq-v1
--> src/App.tsx passes groundEqSettings to UI and MapScene
--> UI Ground EQ canvas reads engine.getRawFrequencyData() for a live spectrum background and labels the 8 visual frequency segments
--> MapScene calls engine.getAudioData(), then applies visual EQ before shader uniforms
--> CustomShaderMaterial receives adjusted subBass/bass/lowMid/mid/highMid/presence/brilliance/air/energy values
--> Pulse/Meteor trigger evaluation and raw AudioEngine output stay unchanged
-```
-
-Theme flow:
-
-```text
-src/lib/themes.ts defines the four built-in themes and keeps their exact color values stable
--> src/App.tsx stores the active theme id
--> active theme id persists in browser localStorage key sonic-topography-active-theme-v1
--> built-in theme id resolves directly from themes
--> custom theme presets read browser localStorage key sonic-topography-custom-themes-v2
--> active custom preset id persists in browser localStorage key sonic-topography-active-custom-theme-v1
--> custom presets use background/cool/warm/accent colors plus glow intensity
--> the selected custom preset stores page auto-rotation speed and player panel visibility
--> those two controls apply immediately even while a built-in color theme is active
--> the player palette button cycles through the built-in themes plus the active custom preset
--> optional theme rotation settings persist in browser localStorage key sonic-topography-theme-rotation-v1
--> rotation can include any built-in theme plus any saved custom preset, with a user-selected interval
--> createCustomThemeColors() derives the shader colors from those simple controls
--> App passes resolvedTheme to UI and MapScene
--> UI uses resolvedTheme.uRippleColor as the accent for buttons, sliders, progress, lyrics, stats, Pulse controls, and Meteor controls
--> App passes selected custom preset rotation speed to MapScene OrbitControls autoRotateSpeed
--> MapScene lerps shader uniforms and meteor color toward resolvedTheme
-```
-
-Preset import/export flow:
-
-```text
-Settings -> Preset Migration
--> Export creates a versioned JSON file through src/lib/presetTransfer.ts
--> export includes browser playlists, trigger settings, Ground EQ, custom themes, active theme ids, and theme rotation
--> Netease Cookie is excluded by default and included only when the user checks "Include Cookie"
--> Import reads a JSON file, validates app/version, normalizes all known sections, and overwrites matching browser localStorage keys
--> UI applies imported trigger settings to AudioEngine, updates React theme/EQ/playlist/Cookie state, syncs playlists to /api/playlists, and re-syncs imported Cookie through /api/netease/cookie
--> imported data intentionally does not include uploaded audio files, real music files, current playback progress, or play queue
-```
-
-Go EXE packaging flow:
-
-```text
-npm run build
--> Vite writes browser assets to dist/
--> npm run build:go-embed copies dist/ into cmd/sonic-topography/dist without deleting directories
--> go build -o SonicTopography.exe ./cmd/sonic-topography
--> cmd/sonic-topography/main.go embeds dist and starts a localhost server
--> internal/sonicserver/server.go serves the SPA, /api/playlists, and the Netease proxy endpoints
--> the EXE opens the default browser at http://127.0.0.1:4173
--> playlists persist under the user config directory, not the repository data/ folder
-```
-
-Wallpaper Engine flow:
-
-```text
-npm run build:wallpaper
--> Vite writes static files with relative asset paths into dist-wallpaper/
--> scripts/prepare-wallpaper.mjs writes dist-wallpaper/project.json and preview.png
--> Wallpaper Engine imports dist-wallpaper/index.html as a Web wallpaper
--> project.json enables supportsaudioprocessing
--> window.wallpaperRegisterAudioListener feeds system audio bands into AudioEngine
--> MapScene renders terrain, ripples, and meteors from Wallpaper Engine audio data
+Search and playback
+Search panel chooses effectiveSearchProvider
+-> Netease: /api/netease/search
+-> QQ: /api/qq/search
+-> UI.loadNeteaseSong(song, queue)
+-> Netease: /api/netease/url + /api/netease/lyric + /api/netease/audio
+-> QQ: /api/qq/song/url + /api/qq/lyric + /api/qq/audio
+-> AudioEngine.loadUrl()
+-> MapScene reads AudioEngine.getAudioData()
 ```
 
 ## Code Map
 
-### Player, Demo, And Lyrics Entry
+### React Player UI
 
 `src/components/UI/UI.tsx`
 
-Owns the left control rail, Demo button, Netease search panel, saved playlist panel, playback queue controls, upload and drag/drop files, player panel, theme switch, lyrics status, and Settings panel. Settings contains Pulse and Meteor trigger controls plus a Netease Cookie editor. Demo defaults to `public/demo.mp3` and `public/demo.lrc`. Saved playlists are loaded from `/api/playlists`, persisted to `data/playlists.json`, and backed up in browser `localStorage`.
+Main interaction surface. Owns sidebar, search, cloud music panel, account login settings, update checks, playback queue, album-cover rendering, and cloud playback dispatch. The player card polls audio time at a low fixed interval rather than every animation frame to avoid repainting the whole UI at 60fps. The custom theme `showPlayerPanel` flag controls whether the right player card is visible; the card can render an empty state before a track is loaded. The cloud panel expects provider-aware song identities such as `netease:<id>` and `qq:<id>`. Netease keeps daily recommendations; QQ only has liked songs and playlists.
 
-`src/lib/neteaseCookie.ts`
+`src/types.ts`
 
-Normalizes multiline copied Netease Cookie strings, defines the browser storage key and `X-Netease-Cookie` request header, and exposes helpers used by UI search/load requests.
+Shared client types. `NeteaseSong` is the common cloud-song shape used by the player UI, saved playlists, and last-played storage; keep this type here instead of redefining it inside UI components.
 
-`src/lib/triggerSettings.ts`
+### Netease Cloud Music
 
-Normalizes and persists Pulse/Meteor trigger panel settings in browser `localStorage`. This keeps trigger preferences per browser/user without writing them into project config or packaged files.
+`server/netease-library.mjs`
 
-`src/lib/groundEqSettings.ts`
+Shared Netease playlist helpers used by both dev and packaged servers. Important helpers:
 
-Normalizes and persists the 16-point Ground EQ curve in browser `localStorage`. This is a visual-only response curve applied in `MapScene` before shader uniforms, not a real audio EQ and not part of Pulse/Meteor trigger evaluation. The Ground EQ settings canvas in `UI.tsx` may read `engine.getRawFrequencyData()` to draw a live spectrum guide; it should not call `engine.getAudioData()` because that belongs to the terrain render loop.
+- `normalizeNeteasePlaylistLimit()`
+- `collectNeteasePlaylistTrackIds()`
+- `mergeNeteasePlaylistTrackDetails()`
+- `mapNeteaseSong()`
 
-`src/lib/themes.ts`
-
-Defines the four built-in visual themes, custom theme preset browser storage keys, and helpers for normalizing and deriving custom theme shader colors. Built-in theme color values should remain unchanged unless the request explicitly asks to redesign them.
+When a playlist says it has 70 songs but only 20 display, check this module first. Netease often returns only part of the playlist in `playlist.tracks`; `playlist.trackIds` is the complete ordered ID list. `mapNeteaseSong()` also maps album artwork into the shared `cover` field used by song rows and the player panel.
 
 `vite.config.ts`
 
-Provides the Vite dev server middleware for `/api/netease/cookie`, `/api/netease/liked`, `/api/netease/playlists`, `/api/netease/playlist`, `/api/netease/daily-recommend`, `/api/netease/search`, `/api/netease/lyric`, `/api/netease/url`, and `/api/netease/audio`. This avoids browser CORS issues, validates the browser Cookie, filters cloud library, daily recommendation, and search results to playable candidates, caches playable URL/search checks per Cookie, and proxies playable audio when Netease returns a URL. `/api/netease/cookie` keeps a runtime memory copy because `HTMLAudioElement` cannot send custom headers to `/api/netease/audio`.
+Vite dev server API. Registers `/api/playlists`, `/api/netease/*`, `/api/qq/*`, and update APIs. Netease playlist behavior must stay in sync with `local-server.mjs`.
 
 `local-server.mjs`
 
-Production local server for the built `dist/` folder. It mirrors the Netease proxy endpoints from `vite.config.ts` so the packaged app keeps Search, cloud library, daily recommendations, lyrics, browser Cookie sync, and audio proxy support without running Vite. It also exposes `/api/playlists` for file-backed playlist persistence.
+Packaged Electron local Express server. Mirrors the dev server API behavior. If a Netease API fix is made in `vite.config.ts`, apply the same production fix here.
 
-`internal/sonicserver/server.go`
+`src/lib/neteaseCookie.ts`
 
-Go implementation of the production local server for single-EXE packaging. It mirrors `local-server.mjs` endpoint names and response shapes, embeds the same playable-song filtering and Cookie-in-memory behavior, and stores packaged playlists in the user's config directory by default.
+Netease cookie parsing, storage, and request header helpers.
 
-`cmd/sonic-topography/main.go`
+### QQ Music
 
-Go EXE entrypoint. It embeds `cmd/sonic-topography/dist`, starts the Sonic server on fixed `127.0.0.1:4173`, reuses an existing Sonic Topography server on that port, and opens the default browser. It intentionally does not fall back to random ports so browser `localStorage` stays under one origin.
+`server/qq-music.mjs`
 
-`scripts/prepare-go-embed.mjs`
+Shared QQ Music service module for Vite middleware and Express production routes. Handles cookies, login status, search, personal playlists, playlist tracks, playback URLs, lyrics, and audio proxying.
 
-Copies Vite's `dist/` output into `cmd/sonic-topography/dist` before `go build` so the final EXE contains the current frontend assets.
+Key endpoints:
 
-`start-sonic-topography.bat`
+- `GET /api/qq/user/playlists`
+- `GET /api/qq/playlist/tracks?id=<id>&limit=all`
+- `GET /api/qq/search?keywords=<keywords>&limit=30`
+- `GET /api/qq/song/url?mid=<mid>&mediaMid=<mediaMid>&quality=exhigh`
+- `GET /api/qq/audio?mid=<mid>&mediaMid=<mediaMid>&quality=exhigh`
 
-Windows one-click launcher. It installs dependencies if needed, builds `dist/` if missing, opens `http://127.0.0.1:4173`, and runs `local-server.mjs`.
+QQ playback defaults to `exhigh` / 320k MP3. Do not default to Hi-Res FLAC; QQ can return a seemingly playable FLAC purl that later 404s during real audio streaming.
 
-`src/lib/metadata.ts`
-
-Uses `music-metadata-browser` to read title, artist, and embedded lyrics from an audio Blob/File. Falls back to the file name when metadata is unavailable.
-
-`src/lib/lyrics.ts`
-
-Parses standard `[mm:ss.xx]` or `[mm:ss.xxx]` LRC timestamps and sorts lyric lines.
-
-`src/components/UI/LyricsDisplay.tsx`
-
-Highlights lyric lines from the current playback time.
-
-### Audio Engine
+### Audio And Scene
 
 `src/lib/AudioEngine.ts`
 
-Wraps `HTMLAudioElement`, Web Audio API, spectrum analysis, Wallpaper Engine audio-listener input, system audio capture, auto beat detection, advanced band triggers, and the visual release tail used when pausing, closing capture, or switching tracks.
+Web Audio playback and frequency analysis. Splits audio into sub-bass, bass, low-mid, mid, high-mid, presence, brilliance, and air bands. `getAudioData()` caches one analysis snapshot per animation frame so multiple readers do not repeat analyser scans or advance trigger state twice in the same frame.
 
-`scripts/prepare-wallpaper.mjs`
+`src/lib/metadata.ts`
 
-Creates Wallpaper Engine metadata in `dist-wallpaper/project.json`, enables `supportsaudioprocessing`, and copies the horizontal cover image to `dist-wallpaper/preview.png`.
-
-### 3D Visualizer
+Local audio metadata reader for uploaded files and demo audio. It dynamically imports `music-metadata-browser` only when local metadata is requested; cloud music cover art comes from Netease/QQ API song data instead.
 
 `src/components/AudioVisualizer/MapScene.tsx`
 
-Connects the audio engine to the Three.js scene, driving ripples, meteors, and camera interaction. Meteor spawn spacing is also gated here by `engine.meteorTrigger.cooldown / 60`, so `Cooldown (frames)` affects visible Meteor generation intervals.
+Three.js scene. Reads `AudioEngine.getAudioData()`, applies ground EQ settings, and passes uniforms to the terrain shader.
 
 `src/components/AudioVisualizer/CustomShaderMaterial.ts`
 
-Defines terrain vertex/fragment shaders and changes height and color from audio bands and trigger waves.
+Terrain shader. Low frequencies change elevation; high frequencies mostly affect glow, sparks, and shimmer.
+
+`src/lib/groundEqSettings.ts`
+
+Ground effects mixer storage, normalization, legacy curve migration, per-band sensitivity scaling, and the global ground motion speed value. The model is 8 independent band values plus `motionSpeed`, not a 16-point curve. The UI exposes the bands as mixer faders for sub-bass, bass, low-mid, mid, high-mid, presence, brilliance, and air, with one horizontal slider controlling how quickly the terrain columns rise and fall.
+
+### Theme Colors
+
+`src/lib/themes.ts`
+
+Normalizes built-in and custom theme colors. First launch defaults to the built-in `Nocturnal` theme through `DEFAULT_THEME_ID`. Custom `background` maps to terrain dark colors (`uBaseColor1` / `uBaseColor2`), `fog` is a compatibility field whose product meaning is the rear canvas backdrop color (`uFogColor`), `cool` maps to `uCoolCore`, `warm` maps to `uWarmCore`, and `accent` maps to `uRippleColor`. Legacy custom themes without `fog` default to `fog = background` and `fogLinkedToBackground = true`.
+
+`src/App.tsx`
+
+Uses `uFogColor` as the app/canvas backdrop color so transparent far-distance terrain reveals the selected rear background.
+
+`src/components/UI/UI.tsx`
+
+Custom theme editor. The ground/backdrop color row has a lock control: when `fogLinkedToBackground` is true, changing terrain dark color immediately syncs the rear backdrop and disables the backdrop picker; when false, the rear backdrop is edited independently.
+
+`src/components/AudioVisualizer/MapScene.tsx`
+
+Feeds theme colors into Three.js fog and terrain shader uniforms each frame. Three.js fog should stay close to `uBaseColor1` for natural terrain-edge fade; do not use the rear backdrop color for the real fog layer.
+
+`src/components/AudioVisualizer/CustomShaderMaterial.ts`
+
+Shader palette source. Do not hard-code cyan/blue brightness washes; bright high-frequency glow should derive from `uCoolCore` so the custom cool color is visible. Far-distance transparent fade can blend toward `uFogColor` before alpha fade, but edge fog/aerial perspective should stay based on terrain base colors.
+
+### Electron Desktop Shell
+
+`desktop/main.js`
+
+Electron main process. Handles frameless transparent rounded window, window IPC, dev/production loading, production local server, official Netease/QQ QR login windows, cookie extraction, and update installer opening. Startup app switches request Chromium GPU acceleration and prefer the high-performance GPU (`force_high_performance_gpu`), but Windows graphics settings and the driver can still override the final adapter choice.
+
+`desktop/preload.cjs`
+
+Exposes `window.sonicDesktop` through `contextBridge` and adds desktop CSS classes.
+
+`scripts/dev-electron.mjs`
+
+Starts Vite and Electron for development.
+
+`package.json`
+
+Electron Builder and NSIS installer configuration. The Windows installer is not one-click, allows users to choose the installation directory, and creates desktop/start-menu shortcuts. Packaged mode uses the app version and GitHub update source from this file, so release builds must bump `version` and configure `sonicTopography.update.owner/repo`.
+
+On this Windows workspace, Electron Builder can fail with `EPERM` while renaming `win-unpacked.tmp` after extracting Electron. The build config uses `electronDist: node_modules/electron/dist` to reuse the installed Electron runtime and skip that fragile extraction/rename step. Windows icon assets live in `build/icon.ico` and are wired into the executable and NSIS installer/uninstaller.
 
 ## Test Index
 
 | Test file | Covers |
 | --- | --- |
-| `src/lib/neteaseCookie.test.ts` | Cookie normalization and `X-Netease-Cookie` header creation |
-| `src/lib/triggerSettings.test.ts` | Trigger setting normalization and bounds |
-| `src/lib/presetTransfer.test.ts` | Preset package validation, Cookie opt-in export, playlist/theme/EQ/trigger normalization |
-| `internal/sonicserver/server_test.go` | Go Cookie normalization, playlist normalization, and `/api/playlists` persistence |
+| `src/lib/neteasePlaylist.test.ts` | Netease playlist `trackIds` completeness, track detail merging, playlist limit parsing |
+| `src/lib/audioFrameCache.test.ts` | AudioEngine single-frame analysis cache and analyser read deduplication |
+| `src/lib/themes.test.ts` | Custom theme normalization, legacy rear-backdrop defaults, and independent backdrop color mapping |
+| `src/lib/themeShader.test.ts` | Shader brightness color derives from custom cool color and far-distance backdrop blend derives from `uFogColor` |
+| `src/lib/groundEqSettings.test.ts` | 8-band ground effects defaults, motion speed defaults/clamping, legacy curve migration, per-band scaling |
+| `src/lib/neteaseCookie.test.ts` | Netease cookie cleaning, storage, request headers |
+| `src/lib/qqCookie.test.ts` | QQ cookie cleaning, login state, storage, request headers |
+| `src/lib/qqMusicLibrary.test.ts` | QQ playlist detection, playlist filtering, song mapping, track limit parsing, quality candidates |
+| `src/lib/updateSource.test.ts` | Update source normalization |
+| `src/lib/triggerSettings.test.ts` | Pulse/meteor trigger settings import/export |
+| `src/lib/presetTransfer.test.ts` | Preset package normalization, cookie exclusion, playlist migration |
 
 ## Common Change Recipes
 
-### Change Demo Track
+### Fix Netease Playlist Counts
 
-1. Put audio at `public/demo.mp3`.
-2. Put lyrics at `public/demo.lrc`.
-3. If audio contains title/artist metadata, the player shows it; otherwise it shows `demo`.
-4. Run `npm run lint` and `npm run build`.
-5. Open `http://127.0.0.1:3000/`, click `Demo`, and verify song name, lyrics, and playback.
+1. Reproduce against `/api/netease/playlist?id=<id>&limit=all`.
+2. Check whether upstream `playlist.tracks.length` is smaller than `playlist.trackCount`.
+3. If so, use `playlist.trackIds` and batch `/api/song/detail`; do not rely on `playlist.tracks`.
+4. Do not pre-filter playlist lists by playable URL. The list should show the playlist contents; playback failure is handled when the user plays a song.
+5. Update `server/netease-library.mjs` and `src/lib/neteasePlaylist.test.ts`.
+6. Keep `vite.config.ts` and `local-server.mjs` behavior identical.
+7. Run `npx tsx src/lib/neteasePlaylist.test.ts`, `npm run lint`, and `npm run build`.
 
-### Change Upload Lyrics Behavior
+### Change QQ Personal Library
 
-1. Modify `processFiles()` in `src/components/UI/UI.tsx`.
-2. If the LRC format changes, update `src/lib/lyrics.ts`.
-3. Run `npm run lint`.
-4. Select audio and `.lrc` together, then verify lyric display and timing.
+1. Modify `server/qq-music.mjs`.
+2. Update `src/lib/qqMusicLibrary.test.ts`.
+3. Update `src/components/UI/UI.tsx` if the panel or search provider changes.
+4. Run `npx tsx src/lib/qqMusicLibrary.test.ts`, `npx tsx src/lib/qqCookie.test.ts`, `npm run lint`, and `npm run build`.
 
-### Change Netease Search, Cloud Library, Daily Recommendation, Or Browser Cookie Behavior
+### Change Account Login
 
-1. Modify the UI states and handlers in `src/components/UI/UI.tsx`.
-2. Update Cookie helpers in `src/lib/neteaseCookie.ts` if storage, normalization, or request-header behavior changes.
-3. Modify the proxy endpoints in both `vite.config.ts` and `local-server.mjs`.
-4. Run `npx tsx src/lib/neteaseCookie.test.ts`, `npm run lint`, and `npm run build`.
-5. Restart `npm run dev` because Vite middleware changes require a server restart.
-6. Smoke test `http://127.0.0.1:3000/api/netease/search?keywords=tyler` without a Cookie; behavior should match GitHub `e3b8c83`: the UI sends no `limit`, anonymous search uses `search/get/web`, default limit 12, max resultLimit 20, upstream limit min(resultLimit * 3, 60), then filters by anonymous playable URLs.
-7. Smoke test `PUT http://127.0.0.1:3000/api/netease/cookie`, then repeat the same `/api/netease/search` with a real valid Cookie; account/VIP playable songs may appear, but unplayable songs should still be filtered out. Repeat once to verify anonymous cache and Cookie cache do not mix.
-8. With a real valid Cookie, smoke test `http://127.0.0.1:3000/api/netease/liked?limit=3`, `http://127.0.0.1:3000/api/netease/playlists`, and `http://127.0.0.1:3000/api/netease/daily-recommend?limit=3`.
-9. In the browser, open Settings -> Netease Cookie, open the official website, copy/save a Cookie, verify the left-side Netease entry appears, open liked/playlists/daily recommendations, and verify each secondary menu lists playable songs.
-10. Click a song in each secondary menu to verify playback and queue skip support. Click the plus button on a cloud song and verify it appears in the local Favorites playlist after reload.
+1. Check `desktop/main.js` login windows and cookie polling.
+2. Check `desktop/preload.cjs` IPC exposure.
+3. Update account UI in `src/components/UI/UI.tsx`.
+4. Update cookie helpers and tests as needed.
+5. Verify with real QR login in Electron.
 
-### Change One-Click Startup
+### Change Ground Effects Mixer
 
-1. Modify shared proxy behavior in both `vite.config.ts` and `local-server.mjs`.
-2. If the change affects packaged EXE behavior, mirror it in `internal/sonicserver/server.go`.
-3. Modify launcher behavior in `start-sonic-topography.bat` or `cmd/sonic-topography/main.go`.
-4. Run `npm run lint`, `npm run build`, and `go test ./...` when Go is installed.
-5. Run `npm start` or double-click `start-sonic-topography.bat`.
-6. Smoke test `http://127.0.0.1:4173` and `http://127.0.0.1:4173/api/netease/search?keywords=angel&limit=2`.
-
-### Package Windows Go EXE
-
-1. Run `npm run lint` and `npm run build`.
-2. Run `npm run build:go-embed`.
-3. Run `go test ./...`.
-4. Run `go build -o SonicTopography.exe ./cmd/sonic-topography` or `npm run build:go-exe`.
-5. Double-click `SonicTopography.exe`; verify it opens the browser automatically.
-6. Smoke test local upload/demo playback, `/api/playlists`, anonymous Netease search, valid-Cookie Netease search/cloud menus, and `/api/netease/audio`.
-
-### Package Wallpaper Engine Web Wallpaper
-
-1. Run `npm run lint`.
-2. Run `npm run build:wallpaper`.
-3. In Wallpaper Engine, create/import a Web wallpaper from `dist-wallpaper/index.html`.
-4. Play system audio and verify the terrain responds without clicking system capture.
-5. Click the built-in Demo if local playback should also be checked.
-6. Do not import the repository root; import only `dist-wallpaper/` so `node_modules/`, source files, and runtime data are not copied into Wallpaper Engine.
-
-### Change Saved Playlists
-
-1. Modify playlist state and UI in `src/components/UI/UI.tsx`.
-2. Modify `/api/playlists` in both `local-server.mjs` and `vite.config.ts`.
-3. Keep `PLAYLIST_STORAGE_KEY` stable unless a migration is added.
-4. Run `npm run lint` and `npm run build`.
-5. Smoke test `GET/PUT http://127.0.0.1:4173/api/playlists`.
-6. In the browser, search a song, click its plus button, add it to an existing or new playlist, restart the app, and verify the `Playlist` panel still contains it.
-7. Delete a song and delete a playlist, then restart and verify they stay deleted.
-8. Verify delete confirmation appears before removing a song or playlist.
-
-### Change Playback Queue Or Skip Mode
-
-1. Modify queue state and controls in `src/components/UI/UI.tsx`.
-2. Keep search-result and playlist clicks passing a queue into `loadNeteaseSong()`.
-3. Run `npm run lint` and `npm run build`.
-4. In the browser, play from a playlist, test previous/next, toggle sequence/shuffle, and let a song end to verify auto-advance.
-5. If a queued Netease song fails to load or becomes unavailable, verify playback attempts the next queued song.
-
-### Change Trigger Settings Persistence Or Meteor Trigger Spacing
-
-1. Modify trigger evaluation in `src/lib/AudioEngine.ts` if the audio event threshold changes.
-2. Modify browser persistence in `src/lib/triggerSettings.ts` if saved setting schema changes.
-3. Modify visible spawn gating in `src/components/AudioVisualizer/MapScene.tsx` if Meteor spacing feels wrong.
-4. Modify panel controls in `src/components/UI/UI.tsx`.
-5. Run `npx tsx src/lib/triggerSettings.test.ts`, `npm run lint`, and `npm run build`.
-6. In the browser, open `Settings`, choose `Meteor`, set `Cooldown (frames)` to `300`, refresh, and verify the setting persists in the same browser.
-7. Verify visible Meteors are spaced about five seconds apart.
+1. Update `src/lib/groundEqSettings.ts` for data model changes.
+2. Update `src/components/UI/UI.tsx` for the mixer UI.
+3. Update `src/components/AudioVisualizer/MapScene.tsx` for band-to-shader mapping.
+4. If the stored model changes, update preset import/export normalization in `src/lib/presetTransfer.ts` tests.
+5. Keep exactly 8 direct frequency controls unless `AudioEngine` and `CustomShaderMaterial` add more direct frequency uniforms. Global `motionSpeed` controls terrain response smoothing only.
+6. Run `npx tsx src/lib/groundEqSettings.test.ts`, `npx tsx src/lib/presetTransfer.test.ts`, `npm run lint`, and `npm run build`.
 
 ## Local Verification Commands
 
 ```powershell
-npm run lint
+npx tsx src/lib/neteasePlaylist.test.ts
+npx tsx src/lib/audioFrameCache.test.ts
+npx tsx src/lib/themes.test.ts
+npx tsx src/lib/themeShader.test.ts
+npx tsx src/lib/groundEqSettings.test.ts
 npx tsx src/lib/neteaseCookie.test.ts
+npx tsx src/lib/qqCookie.test.ts
+npx tsx src/lib/qqMusicLibrary.test.ts
+npx tsx src/lib/updateSource.test.ts
 npx tsx src/lib/triggerSettings.test.ts
+npx tsx src/lib/presetTransfer.test.ts
+npm run lint
 npm run build
-npm run build:go-embed
-npm run build:go-exe
-go test ./...
-go build -o SonicTopography.exe ./cmd/sonic-topography
-npm run build:wallpaper
-npm run dev
-npm start
+npm run dev:electron
+npm run build:electron:dir
 ```
 
 ## Search Shortcuts
 
 ```powershell
-rg -n "loadDemo|processFiles|lyricsText|extractAudioMetadata" src
-rg -n "searchNetease|loadNeteaseSong|neteaseCookie|/api/netease" src vite.config.ts local-server.mjs
-rg -n "api/netease|local-server|start-sonic" vite.config.ts local-server.mjs package.json
-rg -n "sonicserver|build:go|go:embed|Netease" cmd internal package.json scripts
-rg -n "PLAYLIST_STORAGE_KEY|/api/playlists|playlists|songToAdd|showPlaylistPanel" src/components/UI/UI.tsx vite.config.ts local-server.mjs
-rg -n "playQueue|currentSongId|playMode|playFromQueue" src/components/UI/UI.tsx
-rg -n "meteorTrigger.cooldown|lastMeteorSpawnTime|addMeteor" src/components
-rg -n "triggerSettings|TRIGGER_SETTINGS_STORAGE_KEY|pulseTrigger|meteorTrigger" src
-rg -n "loadUrl|loadFile|getAudioData|onFreqTrigger" src/lib src/components
+rg -n "collectNeteasePlaylistTrackIds|fetchNeteaseSongDetails|getPlaylistPlayableSongs|trackIds" server vite.config.ts local-server.mjs src
+rg -n "groundEqSettings|applyGroundEqBandValue|GroundEqPanel|uSubBass|uAir" src
+rg -n "uCoolCore|uWarmCore|uRippleColor|uFogColor|fogLinkedToBackground|brightCool|createCustomThemeColors" src
+rg -n "effectiveSearchProvider|searchNetease|loadNeteaseSong|songIdentity|/api/netease|/api/qq" src vite.config.ts local-server.mjs server
+rg -n "handleQQUserPlaylists|handleQQPlaylistTracks|normalizeQQPlaylistTrackLimit|mapQQPlaylist" server src
+rg -n "sonicDesktop|openNeteaseLogin|openQQLogin|Cookie" desktop src server
+rg -n "wallpaper|capture|build:go|build:wallpaper|sonicserver|cmd/sonic-topography" .
 ```
 
 ## Known Runtime Notes
 
-- Static assets live in `public/` and are served from the root path, for example `public/demo.mp3` is `/demo.mp3`.
-- `package.json` has a `clean` script containing `rm -rf`; do not run it.
-- Double-click startup uses `start-sonic-topography.bat`; production local server runs on `http://127.0.0.1:4173`.
-- Go EXE packaging requires a local Go toolchain. The final EXE does not require users to install Go or Node, but building it does.
-- `scripts/prepare-go-embed.mjs` intentionally copies files without recursively deleting the embed directory because project rules forbid bulk deletion.
-- Go EXE playlist persistence uses the user's config directory, for example `%APPDATA%/SonicTopography/playlists.json` on Windows.
-- If `SonicTopography.exe` cannot start, check whether another non-Sonic program is already listening on `127.0.0.1:4173`. The Go launcher reuses an existing Sonic Topography server on that port, but it does not fall back to a random port.
-- Browser autoplay and Web Audio initialization depend on user interaction. Click Demo, Play, or Upload before expecting audio.
-- The first-run side navigation hint is browser-local via `sonic-topography-side-nav-hint-seen-v1`. It disappears permanently for that browser after the side rail is opened once.
-- System audio capture depends on browser permission. Permission cancelation should return silently to regular playback state.
-- Netease playback URLs can be unavailable because of copyright, membership, region, or login restrictions. Lyrics may still load when audio cannot play.
-- Search filters out songs without playback URLs. The proxy checks candidates in small concurrent batches and caches search/playability results to keep repeat searches faster.
-- Netease Cookie is stored in browser `localStorage` and synced to the local proxy runtime via `/api/netease/cookie`. Search/url/lyric/cloud/daily fetches can send `X-Netease-Cookie`, but audio playback relies on the server memory copy because the browser audio element cannot attach custom headers.
-- On startup and before Netease cloud menu requests, the UI re-syncs the browser-saved Cookie to recover after a local proxy restart. Cloud menus should hide the left-side Netease entry only on explicit `401`; network errors, upstream `5xx`, empty playlists, copyright, membership, or region limits should show a transient Chinese failure/empty state instead.
-- Netease login is manual Cookie only. The Settings panel can open `music.163.com`, but browser security prevents this app from automatically reading official-site Cookies.
-- The left-side Netease entry appears only after `/api/netease/cookie` validates the Cookie. Invalid, expired, or logged-out Cookies should hide the entry and direct the user back to Settings, but ordinary Netease API failures must not clear the valid state.
-- Cloud song plus buttons add songs to the local `Favorites` playlist, not to the upstream Netease account.
-- Pulse/Meteor trigger settings are browser-local via `sonic-topography-trigger-settings-v1`. They should persist across refreshes for the same browser but should not be written into packaged project files or shared with other users.
-- Saved playlists are file-backed in `data/playlists.json`; `data/` is ignored by git because it is user runtime data. Browser `localStorage` is kept as a fallback/migration source.
-- Preset import overwrites matching browser settings and syncs playlists to the local server. Export excludes Netease Cookie unless the user explicitly opts in; exported Cookie files should be treated as sensitive login data.
-- If the terrain snaps flat when stopping or switching audio, inspect `AudioEngine.beginVisualRelease()` and the non-playing branch in `getAudioData()` before changing shader code.
+- Electron is the only formal packaging direction. Go single EXE, Wallpaper Engine, and system-audio capture are not product routes.
+- Windows installer output is produced by `npm run build:electron` under `release/`. Publish that setup `.exe` as a GitHub Release asset; pushing code alone does not publish an app update.
+- Do not bulk delete files or directories. If a directory must be cleared, ask the user to do it manually.
+- In Electron dev mode, `src/` usually hot reloads. Changes to `desktop/main.js`, `desktop/preload.cjs`, `server/*.mjs`, `vite.config.ts`, or `local-server.mjs` may require restarting `npm run dev:electron`.
+- Packaged mode starts `local-server.mjs` from `desktop/main.js`, usually on port `45437`.
+- Cloud music playback can be affected by copyright, membership, region, account status, and upstream API changes.

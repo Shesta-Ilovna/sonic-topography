@@ -1,11 +1,5 @@
 import { AudioData } from '../types';
 
-declare global {
-  interface Window {
-    wallpaperRegisterAudioListener?: (callback: (audioArray: number[]) => void) => void;
-  }
-}
-
 export type TriggerPreset = 'Auto Beat' | 'Advanced';
 
 export class TriggerConfig {
@@ -62,19 +56,18 @@ export class AudioEngine {
   private analyser: AnalyserNode | null = null;
   private source: MediaElementAudioSourceNode | null = null;
   private fadeNode: GainNode | null = null;
-  private captureStream: MediaStream | null = null;
-  private captureSource: MediaStreamAudioSourceNode | null = null;
   public audioElement: HTMLAudioElement;
 
   private dataArray: Uint8Array = new Uint8Array(512);
-  private wallpaperAudioActiveUntil = 0;
   
   public isPlaying: boolean = false;
-  public isCapturing: boolean = false;
   private pauseTimeout: ReturnType<typeof setTimeout> | null = null;
   private fadeTime = 0.5; // seconds
   private visualReleaseUntil = 0;
   private visualReleaseTime = 1.6; // seconds
+  private frameCacheId = 0;
+  private currentFrameId = 0;
+  private cachedFrameData: AudioData | null = null;
   
   private beatThreshold = 0.4;
   private beatDecay = 0.95;
@@ -88,6 +81,7 @@ export class AudioEngine {
   constructor() {
     this.audioElement = new Audio();
     this.audioElement.crossOrigin = 'anonymous';
+    this.scheduleFrameCacheInvalidation();
     
     // Attempt to handle ended events
     this.audioElement.addEventListener('ended', () => {
@@ -101,8 +95,15 @@ export class AudioEngine {
     this.audioElement.addEventListener('pause', () => {
       this.isPlaying = false;
     });
+  }
 
-    this.registerWallpaperAudioListener();
+  private scheduleFrameCacheInvalidation() {
+    if (typeof requestAnimationFrame !== 'function') return;
+    requestAnimationFrame(() => {
+      this.currentFrameId++;
+      this.cachedFrameData = null;
+      this.scheduleFrameCacheInvalidation();
+    });
   }
 
   public init() {
@@ -128,83 +129,8 @@ export class AudioEngine {
     this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
   }
 
-  private registerWallpaperAudioListener() {
-    if (typeof window.wallpaperRegisterAudioListener !== 'function') return;
-
-    window.wallpaperRegisterAudioListener((audioArray) => {
-      const halfCount = Math.floor(audioArray.length / 2);
-      if (halfCount <= 0) return;
-
-      for (let i = 0; i < this.dataArray.length; i++) {
-        const sourceIndex = Math.min(halfCount - 1, Math.floor((i / this.dataArray.length) * halfCount));
-        const left = Math.min(1, Math.max(0, audioArray[sourceIndex] || 0));
-        const right = Math.min(1, Math.max(0, audioArray[sourceIndex + halfCount] || 0));
-        this.dataArray[i] = Math.round(((left + right) / 2) * 255);
-      }
-
-      this.wallpaperAudioActiveUntil = performance.now() + 300;
-      this.isPlaying = true;
-    });
-  }
-
-  public async startCapture() {
-    await this.init();
-    if (this.audioCtx?.state === 'suspended') {
-      this.audioCtx.resume();
-    }
-    
-    this.pause(); // stop file playback if any
-
-    try {
-      this.captureStream = await navigator.mediaDevices.getDisplayMedia({ 
-        audio: {
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false,
-        }, 
-        video: true 
-      });
-      if (!this.audioCtx || !this.analyser) return;
-
-      if (this.captureSource) {
-        this.captureSource.disconnect();
-      }
-
-      this.captureSource = this.audioCtx.createMediaStreamSource(this.captureStream);
-      // Connect directly to analyser, NOT to destination (avoids feedback)
-      this.captureSource.connect(this.analyser);
-      
-      this.isCapturing = true;
-      this.isPlaying = true;
-
-      this.captureStream.getVideoTracks()[0]?.addEventListener('ended', () => {
-         this.stopCapture();
-      });
-
-    } catch (e) {
-      console.warn('System audio capture canceled or denied:', e);
-      this.isCapturing = false;
-      this.isPlaying = false;
-    }
-  }
-
-  public stopCapture() {
-    this.beginVisualRelease();
-    if (this.captureStream) {
-      this.captureStream.getTracks().forEach(track => track.stop());
-      this.captureStream = null;
-    }
-    if (this.captureSource) {
-      this.captureSource.disconnect();
-      this.captureSource = null;
-    }
-    this.isCapturing = false;
-    this.isPlaying = false;
-  }
-
   public loadFile(file: File) {
     this.beginVisualRelease();
-    this.stopCapture();
     const url = URL.createObjectURL(file);
     this.audioElement.src = url;
     this.audioElement.load();
@@ -212,7 +138,6 @@ export class AudioEngine {
 
   public loadUrl(url: string) {
     this.beginVisualRelease();
-    this.stopCapture();
     this.audioElement.src = url;
     this.audioElement.load();
   }
@@ -350,10 +275,15 @@ export class AudioEngine {
 
 
   public getAudioData(): AudioData {
-    const hasWallpaperAudio = performance.now() < this.wallpaperAudioActiveUntil;
+    if (this.cachedFrameData && this.frameCacheId === this.currentFrameId) {
+      return { ...this.cachedFrameData };
+    }
 
-    if (!this.analyser && !hasWallpaperAudio) {
-      return { ...this.smoothedData };
+    if (!this.analyser) {
+      const fallback = { ...this.smoothedData };
+      this.cachedFrameData = fallback;
+      this.frameCacheId = this.currentFrameId;
+      return { ...fallback };
     }
 
     const isVisualReleasing = performance.now() < this.visualReleaseUntil;
@@ -368,10 +298,8 @@ export class AudioEngine {
 
     const binCount = this.dataArray.length; // 512
 
-    if (this.isPlaying || hasWallpaperAudio) {
-      if (!hasWallpaperAudio) {
-        this.analyser?.getByteFrequencyData(this.dataArray);
-      }
+    if (this.isPlaying) {
+      this.analyser.getByteFrequencyData(this.dataArray);
 
       let fluxPulse = 0;
       let fluxMeteor = 0;
@@ -487,7 +415,10 @@ export class AudioEngine {
     this.smoothedData.density += (density - this.smoothedData.density) * dt;
     this.smoothedData.spectralCentroid += (spectralCentroid - this.smoothedData.spectralCentroid) * dt;
 
-    return { ...this.smoothedData };
+    const snapshot = { ...this.smoothedData };
+    this.cachedFrameData = snapshot;
+    this.frameCacheId = this.currentFrameId;
+    return { ...snapshot };
   }
 }
 

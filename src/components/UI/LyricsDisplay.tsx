@@ -2,6 +2,7 @@ import React, { useMemo, useEffect, useState, useRef } from 'react';
 import { parseLRC } from '../../lib/lyrics';
 import { engine } from '../../lib/AudioEngine';
 import { type LyricsSettings, type LyricStyleConfig, type LyricsStyleType } from '../../lib/lyricsSettings';
+import { wrapLyricTextLines } from '../../lib/lyricLineWrapping';
 
 export type MergedLyricsConfig = LyricStyleConfig & { style: LyricsStyleType };
 
@@ -61,6 +62,16 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ lrcText, currentTi
   }, [activeIndex, currentTime]);
 
     const karaokeHex = lyricsSettings.followThemeKaraoke ? accentHex : lyricsSettings.karaokeColor;
+    const renderWrappedLyricText = (text: string) => (
+      wrapLyricTextLines(text, lyricsSettings.maxCharsPerLine).map((line, lineIndex, lines) => (
+        <React.Fragment key={`${lineIndex}-${line}`}>
+          {Array.from(line).map((char: string, charIndex: number) => (
+            <span key={`${lineIndex}-${charIndex}`} data-lyric-char="true" style={{ color: lyricsSettings.fontColor }}>{char}</span>
+          ))}
+          {lineIndex < lines.length - 1 && <br />}
+        </React.Fragment>
+      ))
+    );
 
     useEffect(() => {
     let animationFrameId: number;
@@ -81,13 +92,13 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ lrcText, currentTi
           
           const container = activeTextRef.current.firstElementChild as HTMLElement;
           if (container) {
-             const spans = container.children;
+             const spans = container.querySelectorAll<HTMLElement>('[data-lyric-char="true"]');
              const totalChars = spans.length;
              if (totalChars > 0) {
                  const fadeWindow = Math.max(3, totalChars * 0.15);
                  const currentFloatIndex = progress * (totalChars + fadeWindow);
                  for (let i = 0; i < totalChars; i++) {
-                     const span = spans[i] as HTMLElement;
+                     const span = spans[i];
                      const diff = currentFloatIndex - i;
                      let opacity = 0;
                      if (diff >= fadeWindow) opacity = 1;
@@ -110,6 +121,8 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ lrcText, currentTi
   }, [activeIndex, lyrics, lyricsSettings, accentHex]);
 
   if (lyrics.length === 0) return null;
+
+  if (lyricsSettings.style === 'spatial-wall') return null;
 
   if (lyricsSettings.style === 'dynamic-bounce') {
      return (
@@ -201,9 +214,7 @@ export const LyricsDisplay: React.FC<LyricsDisplayProps> = ({ lrcText, currentTi
                         transition: 'text-shadow 700ms ease-out'
                       }}
                     >
-                        {line.text.split('').map((char: string, i: number) => (
-                          <span key={i} style={{ color: lyricsSettings.fontColor }}>{char}</span>
-                        ))}
+                        {renderWrappedLyricText(line.text)}
                     </div>
                   </div>
                 </div>
@@ -227,6 +238,16 @@ const DynamicBounceLyrics: React.FC<{
   const nextLine = lyrics[activeIndex + 1];
 
   const karaokeHex = lyricsSettings.followThemeKaraoke ? accentHex : lyricsSettings.karaokeColor;
+  const renderWrappedLyricText = (text: string) => (
+    wrapLyricTextLines(text, lyricsSettings.maxCharsPerLine).map((line, lineIndex, lines) => (
+      <React.Fragment key={`${lineIndex}-${line}`}>
+        {Array.from(line).map((char: string, charIndex: number) => (
+          <span key={`${lineIndex}-${charIndex}`} data-lyric-char="true" style={{ color: lyricsSettings.fontColor }}>{char}</span>
+        ))}
+        {lineIndex < lines.length - 1 && <br />}
+      </React.Fragment>
+    ))
+  );
 
   useEffect(() => {
     let animationFrameId: number;
@@ -240,7 +261,7 @@ const DynamicBounceLyrics: React.FC<{
           // 1. Bounce effect
           const data = engine.getAudioData();
           const energy = data[lyricsSettings.triggerBand as keyof typeof data] || 0;
-          const scale = 1.0 + (energy * 0.15);
+          const scale = 1.0 + (energy * 0.12);
           activeTextRef.current.style.transform = `scale(${scale})`;
 
           // 2. Karaoke highlight effect
@@ -252,13 +273,13 @@ const DynamicBounceLyrics: React.FC<{
           
           const container = activeTextRef.current.firstElementChild as HTMLElement;
           if (container) {
-             const spans = container.children;
+             const spans = container.querySelectorAll<HTMLElement>('[data-lyric-char="true"]');
              const totalChars = spans.length;
              if (totalChars > 0) {
                  const fadeWindow = Math.max(3, totalChars * 0.15);
                  const currentFloatIndex = progress * (totalChars + fadeWindow);
                  for (let i = 0; i < totalChars; i++) {
-                     const span = spans[i] as HTMLElement;
+                     const span = spans[i];
                      const diff = currentFloatIndex - i;
                      let opacity = 0;
                      if (diff >= fadeWindow) opacity = 1;
@@ -298,7 +319,7 @@ const DynamicBounceLyrics: React.FC<{
     <div className={`absolute z-40 flex flex-col pointer-events-none select-none transition-all duration-1000 ease-out ${isPlaying ? 'opacity-100 blur-none' : 'opacity-0 blur-sm'} ${positionClasses}`}>
       <div
         ref={activeTextRef}
-        className={`relative whitespace-pre-wrap ${lyricsSettings.fontFamily === 'serif' ? 'font-serif' : 'font-sans'} tracking-[0.05em] font-medium transition-all duration-700 ease-out`}
+        className={`relative whitespace-pre-wrap ${lyricsSettings.fontFamily === 'serif' ? 'font-serif' : 'font-sans'} tracking-[0.05em] font-medium`}
         style={{
           fontSize: `${lyricsSettings.activeFontSize}px`,
           willChange: 'transform'
@@ -309,9 +330,7 @@ const DynamicBounceLyrics: React.FC<{
           color: lyricsSettings.fontColor,
           textShadow: `0 0 30px ${lyricsSettings.followThemeGlow ? accentHex : lyricsSettings.glowColor}99, 0 4px 10px rgba(0,0,0,0.9)`
           }}>
-            {activeLine.text.split('').map((char: string, i: number) => (
-              <span key={i} style={{ color: lyricsSettings.fontColor }}>{char}</span>
-            ))}
+            {renderWrappedLyricText(activeLine.text)}
           </div>
         </div>
     </div>

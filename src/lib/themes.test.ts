@@ -1,10 +1,17 @@
 import assert from 'node:assert/strict';
 import {
+  ACTIVE_CUSTOM_THEME_STORAGE_KEY,
   ACTIVE_THEME_STORAGE_KEY,
+  CUSTOM_THEME_ID,
   createCustomThemeColors,
   DEFAULT_THEME_ID,
+  defaultCustomThemeSettings,
+  defaultThemeRotationSettings,
   normalizeCustomThemeSettings,
+  readActiveCustomThemeStorage,
   readActiveThemeStorage,
+  readCustomThemeStorage,
+  readThemeRotationStorage,
 } from './themes';
 
 const storage = new Map<string, string>();
@@ -17,14 +24,34 @@ const storage = new Map<string, string>();
 };
 
 storage.clear();
-assert.equal(DEFAULT_THEME_ID, 'nocturnal');
-assert.equal(readActiveThemeStorage(), 'nocturnal');
+assert.equal(DEFAULT_THEME_ID, 'minimal-monochrome');
+assert.equal(readActiveThemeStorage(), 'minimal-monochrome');
+assert.deepEqual(readCustomThemeStorage(), [defaultCustomThemeSettings]);
+assert.equal(defaultCustomThemeSettings.background, '#ffffff');
+assert.equal(defaultCustomThemeSettings.cool, '#98d2bf');
+assert.equal(defaultCustomThemeSettings.warm, '#ff0000');
+assert.equal(defaultCustomThemeSettings.accent, '#95abb1');
+assert.equal(readActiveCustomThemeStorage(readCustomThemeStorage()), 'custom-default');
+assert.deepEqual(defaultThemeRotationSettings, {
+  enabled: false,
+  intervalSeconds: 10,
+  themeIds: ['neon-tokyo', 'nocturnal', 'cyber-forest', 'minimal-monochrome', 'custom-default', 'ink-wash'],
+});
+assert.deepEqual(
+  readThemeRotationStorage(['ink-wash', 'nocturnal', 'neon-tokyo', 'cyber-forest', 'minimal-monochrome', 'custom-default']),
+  defaultThemeRotationSettings,
+);
 
 storage.set(ACTIVE_THEME_STORAGE_KEY, 'ink-wash');
 assert.equal(readActiveThemeStorage(), 'ink-wash');
 
 storage.set(ACTIVE_THEME_STORAGE_KEY, 'missing-theme');
-assert.equal(readActiveThemeStorage(), 'nocturnal');
+assert.equal(readActiveThemeStorage(), 'minimal-monochrome');
+
+storage.set(ACTIVE_THEME_STORAGE_KEY, CUSTOM_THEME_ID);
+storage.set(ACTIVE_CUSTOM_THEME_STORAGE_KEY, 'custom-default');
+assert.equal(readActiveThemeStorage(), CUSTOM_THEME_ID);
+assert.equal(readActiveCustomThemeStorage(readCustomThemeStorage()), 'custom-default');
 
 const legacyTheme = normalizeCustomThemeSettings({
   id: 'legacy',

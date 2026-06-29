@@ -2,7 +2,7 @@
   "name": "sonic-topography",
   "productName": "Sonic Topography",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A desktop music player and 3D audio visualizer.",
   "author": "Sonic Topography",
   "type": "module",
@@ -59,8 +59,8 @@
   "sonicTopography": {
     "update": {
       "provider": "github",
-      "owner": "",
-      "repo": ""
+      "owner": "yin-yizhen",
+      "repo": "sonic-topography"
     }
   },
   "dependencies": {

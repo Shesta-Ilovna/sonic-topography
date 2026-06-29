@@ -55,6 +55,10 @@ assert.equal(defaultQuality[0].prefix, 'M800');
 const explicitLossless = qualityCandidatesFrom('lossless');
 assert.equal(explicitLossless[0].level, 'lossless');
 
+const explicitAac = qualityCandidatesFrom('aac');
+assert.equal(explicitAac[0].level, 'aac');
+assert.equal(explicitAac[0].prefix, 'C400');
+
 assert.equal(normalizeQQPlaylistTrackLimit('all'), 2000);
 assert.equal(normalizeQQPlaylistTrackLimit('500'), 500);
 assert.equal(normalizeQQPlaylistTrackLimit('5000'), 2000);

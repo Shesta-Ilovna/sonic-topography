@@ -1,8 +1,15 @@
 import { Canvas } from '@react-three/fiber';
 import { UI } from './components/UI/UI';
 import { MapScene } from './components/AudioVisualizer/MapScene';
+import { AudioDebugger } from './components/AudioDebugger/AudioDebugger';
 import { useEffect, useState } from 'react';
 import { readGroundEqSettingsStorage, writeGroundEqSettingsStorage, type StoredGroundEqSettings } from './lib/groundEqSettings';
+import {
+  DEFAULT_CAMERA_POSITION,
+  GLOBAL_SCENE_SETTINGS_STORAGE_KEY,
+  readGlobalSceneSettingsStorage,
+  type GlobalSceneSettings,
+} from './lib/sceneDefaults';
 import {
   BUILT_IN_THEME_IDS,
   CUSTOM_THEME_ID,
@@ -39,14 +46,29 @@ export default function App() {
   const availableRotationThemeIds = [...BUILT_IN_THEME_IDS, ...customThemes.map((preset) => preset.id)];
   const [themeRotation, setThemeRotation] = useState<ThemeRotationSettings>(() => readThemeRotationStorage(availableRotationThemeIds));
   const [lyricsSettings, setLyricsSettings] = useState<LyricsSettings>(readLyricsSettingsStorage);
-  
+  const [showDebugger, setShowDebugger] = useState(false);
+  const [currentLyricsText, setCurrentLyricsText] = useState('');
+  const [lyricsVisible, setLyricsVisible] = useState(true);
+  const [coverVisible, setCoverVisible] = useState(true);
+  const [globalSceneSettings, setGlobalSceneSettings] = useState<GlobalSceneSettings>(readGlobalSceneSettingsStorage);
+
+  // Track current song to pass cover to 3D scene
+  const [currentSong, setCurrentSong] = useState<any | null>(null);
+
+  const [isPerspectiveEditMode, setIsPerspectiveEditMode] = useState(false);
+  const [resetCameraTrigger, setResetCameraTrigger] = useState(0);
+
+  useEffect(() => {
+    localStorage.setItem(GLOBAL_SCENE_SETTINGS_STORAGE_KEY, JSON.stringify(globalSceneSettings));
+  }, [globalSceneSettings]);
+
+  const updateGlobalSceneSettings = (patch: { rotationSpeed?: number }) => {
+    setGlobalSceneSettings(prev => ({ ...prev, ...patch }));
+  };
+
+  const [activeTab, setActiveTab] = useState<'themes' | 'audio'>('themes');
   const resolvedTheme = theme === CUSTOM_THEME_ID ? createCustomThemeColors(activeCustomTheme) : (themes[theme] || themes['ink-wash']);
-  const sceneRotationSpeed = theme === CUSTOM_THEME_ID
-    ? activeCustomTheme?.rotationSpeed ?? resolvedTheme.uRotationSpeed
-    : resolvedTheme.uRotationSpeed;
-  const showPlayerPanel = theme === CUSTOM_THEME_ID
-    ? activeCustomTheme?.showPlayerPanel ?? resolvedTheme.uShowPlayerPanel
-    : resolvedTheme.uShowPlayerPanel;
+  const sceneRotationSpeed = globalSceneSettings.rotationSpeed;
 
   const updateTheme = (themeId: string) => {
     setTheme(themeId);
@@ -109,6 +131,16 @@ export default function App() {
     writeLyricsSettingsStorage(newSettings);
   };
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === '`' || e.key === '~') {
+        setShowDebugger((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // Convert THREE.Color to css strings
   const backdropColor = `#${resolvedTheme.uFogColor.getHexString()}`;
 
@@ -121,19 +153,38 @@ export default function App() {
         activeCustomThemeId={activeCustomThemeId}
         themeRotation={themeRotation}
         groundEqSettings={groundEqSettings}
-        showPlayerPanel={showPlayerPanel}
         onThemeChange={updateTheme}
         onCustomThemesChange={updateCustomThemes}
         onThemeRotationChange={updateThemeRotation}
         onGroundEqSettingsChange={updateGroundEqSettings}
         lyricsSettings={lyricsSettings}
         onLyricsSettingsChange={updateLyricsSettings}
+        globalSceneSettings={globalSceneSettings}
+        onGlobalSceneSettingsChange={updateGlobalSceneSettings}
+        onCurrentSongChange={setCurrentSong}
+        onCurrentLyricsChange={setCurrentLyricsText}
+        onLyricsVisibilityChange={setLyricsVisible}
+        onCoverVisibilityChange={setCoverVisible}
+        isPerspectiveEditMode={isPerspectiveEditMode}
+        onPerspectiveEditModeChange={setIsPerspectiveEditMode}
+        onResetCamera={() => setResetCameraTrigger(prev => prev + 1)}
       />
       <div className="absolute inset-0 z-0">
-        <Canvas camera={{ position: [35, 25, 35], fov: 45 }}>
-          <MapScene themeColors={resolvedTheme} groundEqSettings={groundEqSettings} rotationSpeed={sceneRotationSpeed} />
+        <Canvas camera={{ position: DEFAULT_CAMERA_POSITION, fov: 45 }}>
+          <MapScene 
+            themeColors={resolvedTheme} 
+            groundEqSettings={groundEqSettings} 
+            rotationSpeed={sceneRotationSpeed} 
+            coverUrl={coverVisible ? (currentSong?.cover || currentSong?.picUrl || '') : ''}
+            lyricsText={currentLyricsText || null}
+            lyricsSettings={lyricsSettings}
+            lyricsVisible={lyricsVisible}
+            isPerspectiveEditMode={isPerspectiveEditMode}
+            resetCameraTrigger={resetCameraTrigger}
+          />
         </Canvas>
       </div>
+      {showDebugger && <AudioDebugger onClose={() => setShowDebugger(false)} />}
     </div>
   );
 }

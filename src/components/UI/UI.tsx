@@ -1,11 +1,19 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Play, Pause, Volume2, SkipForward, SkipBack, Palette, Plus, ListMusic, Shuffle, Repeat, Trash2, Minus, Square, X, Search, Lock, Unlock, Menu, Settings } from 'lucide-react';
+import { Play, Pause, Volume2, SkipForward, SkipBack, Palette, Plus, ListMusic, Shuffle, Repeat, Trash2, Minus, Square, X, Search, Lock, Unlock, Menu, Settings, Pin, ChevronDown, ChevronUp } from 'lucide-react';
 import { engine } from '../../lib/AudioEngine';
 import { BUILT_IN_THEME_IDS, CUSTOM_THEME_ID, createCustomThemePreset, themes, type CustomThemeSettings, type ThemeColors, type ThemeRotationSettings } from '../../lib/themes';
 import {
+  DEFAULT_FLOATING_BLOCK_INTENSITY,
+  DEFAULT_FLOATING_BLOCK_MAX_SIZE,
+  DEFAULT_FLOATING_BLOCK_MIN_SIZE,
+  DEFAULT_FLOATING_BLOCK_SPEED,
+  DEFAULT_FLOATING_BLOCKS_ENABLED,
+  DEFAULT_FLOATING_BLOCK_COUNT,
   DEFAULT_GROUND_EQ_VALUE,
   DEFAULT_GROUND_MOTION_SPEED,
+  DEFAULT_TERRAIN_DENSITY,
   defaultGroundEqBands,
+  deriveTerrainGridSettings,
   type GroundEqBandId,
   type StoredGroundEqSettings,
 } from '../../lib/groundEqSettings';
@@ -40,8 +48,27 @@ import {
   writePresetTransferPackage,
   type PresetTransferPackage,
 } from '../../lib/presetTransfer';
-import { type LyricsSettings } from '../../lib/lyricsSettings';
+import {
+  DEFAULT_MAX_CHARS_PER_LINE,
+  DEFAULT_SPATIAL_ORBIT_OFFSET,
+  MAX_CHARS_PER_LINE_MAX,
+  MAX_CHARS_PER_LINE_MIN,
+  SPATIAL_ORBIT_OFFSET_MAX,
+  SPATIAL_ORBIT_OFFSET_MIN,
+  type LyricsSettings
+} from '../../lib/lyricsSettings';
 import { readLastPlayedStorage, writeLastPlayedStorage, type LastPlayedState } from '../../lib/lastPlayedStorage';
+import {
+  buildNeteasePlaybackUrl,
+  buildQQPlaybackUrl,
+  NETEASE_PLAYBACK_BITRATE_OPTIONS,
+  QQ_PLAYBACK_QUALITY_OPTIONS,
+  readPlaybackQualitySettingsStorage,
+  writePlaybackQualitySettingsStorage,
+  type NeteasePlaybackBitrate,
+  type PlaybackQualitySettings,
+  type QQPlaybackQuality,
+} from '../../lib/playbackQuality';
 
 interface UIProps {
   theme: string;
@@ -50,13 +77,21 @@ interface UIProps {
   activeCustomThemeId: string;
   themeRotation: ThemeRotationSettings;
   groundEqSettings: StoredGroundEqSettings;
-  showPlayerPanel: boolean;
   onThemeChange: (theme: string) => void;
   onCustomThemesChange: (settings: CustomThemeSettings[], activeId?: string) => void;
   onThemeRotationChange: (settings: ThemeRotationSettings) => void;
   onGroundEqSettingsChange: (settings: StoredGroundEqSettings) => void;
   lyricsSettings: LyricsSettings;
   onLyricsSettingsChange: (settings: LyricsSettings) => void;
+  globalSceneSettings: { rotationSpeed: number };
+  onGlobalSceneSettingsChange: (patch: { rotationSpeed?: number }) => void;
+  onCurrentSongChange?: (song: NeteaseSong | null) => void;
+  onCurrentLyricsChange?: (lyrics: string) => void;
+  onLyricsVisibilityChange?: (visible: boolean) => void;
+  onCoverVisibilityChange?: (visible: boolean) => void;
+  isPerspectiveEditMode?: boolean;
+  onPerspectiveEditModeChange?: (mode: boolean) => void;
+  onResetCamera?: () => void;
 }
 
 interface NeteaseSong {
@@ -92,7 +127,7 @@ interface NeteasePlaylistSummary {
 }
 
 type PlayMode = 'sequence' | 'shuffle';
-type OptionsTab = 'Pulse' | 'Meteor' | 'GroundEq' | 'Color' | 'Account' | 'Lyrics' | 'Display';
+type OptionsTab = 'Pulse' | 'Meteor' | 'FloatingBlocks' | 'GroundEq' | 'Color' | 'Audio' | 'Account' | 'Lyrics' | 'Display';
 type NeteaseCloudTab = 'liked' | 'playlists' | 'daily';
 type CloudProvider = 'netease' | 'qq';
 type SearchProvider = 'netease' | 'qq';
@@ -104,6 +139,39 @@ const PLAYLIST_STORAGE_KEY = 'sonic-topography-playlists-v1';
 const SIDE_NAV_HINT_STORAGE_KEY = 'sonic-topography-side-nav-hint-seen-v1';
 const SEARCH_PROVIDER_STORAGE_KEY = 'sonic-topography-search-provider-v1';
 const baseUrl = import.meta.env.BASE_URL || '/';
+
+const PINNED_NETEASE_PLAYLISTS_STORAGE_KEY = 'sonic-topography-pinned-netease-v1';
+const PINNED_QQ_PLAYLISTS_STORAGE_KEY = 'sonic-topography-pinned-qq-v1';
+
+function readPinnedNeteasePlaylistsStorage(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(PINNED_NETEASE_PLAYLISTS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function writePinnedNeteasePlaylistsStorage(pinned: string[]) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(PINNED_NETEASE_PLAYLISTS_STORAGE_KEY, JSON.stringify(pinned));
+}
+
+function readPinnedQQPlaylistsStorage(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(PINNED_QQ_PLAYLISTS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function writePinnedQQPlaylistsStorage(pinned: string[]) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(PINNED_QQ_PLAYLISTS_STORAGE_KEY, JSON.stringify(pinned));
+}
 
 function readSideNavHintSeen() {
   if (typeof window === 'undefined') return false;
@@ -297,6 +365,7 @@ function applyStoredTriggerConfig(config: typeof engine.pulseTrigger, stored?: P
   if (Number.isFinite(stored.bandStart)) config.bandStart = Number(stored.bandStart);
   if (Number.isFinite(stored.bandEnd)) config.bandEnd = Number(stored.bandEnd);
   if (Number.isFinite(stored.pulseStrength)) config.pulseStrength = Number(stored.pulseStrength);
+  if (typeof stored.autoTrack === 'boolean') config.autoTrack = stored.autoTrack;
 }
 
 function snapshotTriggerConfig(config: typeof engine.pulseTrigger): StoredTriggerConfig {
@@ -310,6 +379,7 @@ function snapshotTriggerConfig(config: typeof engine.pulseTrigger): StoredTrigge
     bandStart: config.bandStart,
     bandEnd: config.bandEnd,
     pulseStrength: config.pulseStrength,
+    autoTrack: config.autoTrack,
   };
 }
 
@@ -321,11 +391,11 @@ function loadStoredTriggerSettings() {
 
 loadStoredTriggerSettings();
 
-export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, themeRotation, groundEqSettings, showPlayerPanel, onThemeChange, onCustomThemesChange, onThemeRotationChange, onGroundEqSettingsChange, lyricsSettings, onLyricsSettingsChange }: UIProps) {
+export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, themeRotation, groundEqSettings, onThemeChange, onCustomThemesChange, onThemeRotationChange, onGroundEqSettingsChange, lyricsSettings, onLyricsSettingsChange, globalSceneSettings, onGlobalSceneSettingsChange, onCurrentSongChange, onCurrentLyricsChange, onLyricsVisibilityChange, onCoverVisibilityChange, isPerspectiveEditMode, onPerspectiveEditModeChange, onResetCamera }: UIProps) {
   const currentStyleConfig = lyricsSettings[lyricsSettings.style] || (lyricsSettings as any)['songyancai'] || {
     activeFontSize: 32, inactiveFontSize: 18, fontColor: '#ffffff', glowColor: '#00ffff',
     followThemeGlow: true, karaokeColor: '#00ffff', followThemeKaraoke: true,
-    position: 'center', triggerBand: 'subBass', fontFamily: 'serif'
+    position: 'center', triggerBand: 'subBass', fontFamily: 'serif', maxCharsPerLine: DEFAULT_MAX_CHARS_PER_LINE, spatialOrbitOffset: DEFAULT_SPATIAL_ORBIT_OFFSET
   };
   const fileInputRef = useRef<HTMLInputElement>(null);
   const demoAudioUrl = `${baseUrl}demo.mp3`;
@@ -341,11 +411,25 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
   const [lyricsText, setLyricsText] = useState<string>('');
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
+  const [volume, setVolume] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = window.localStorage.getItem('sonic-volume');
+      if (saved !== null) {
+        const v = parseFloat(saved);
+        if (!isNaN(v) && v >= 0 && v <= 1) return v;
+      }
+    }
+    return 1;
+  });
+
+  useEffect(() => {
+    engine.setVolume(volume);
+  }, []);
   const [isDragging, setIsDragging] = useState(false);
   const [showOptionsPanel, setShowOptionsPanel] = useState(false);
   const [isBottomPanelOpen, setIsBottomPanelOpen] = useState(false);
   const [displaySettings, setDisplaySettings] = useState<DisplaySettings>(readDisplaySettingsStorage);
+  const [playbackQualitySettings, setPlaybackQualitySettings] = useState<PlaybackQualitySettings>(readPlaybackQualitySettingsStorage);
   const [showSearchPanel, setShowSearchPanel] = useState(false);
   const [showNeteasePanel, setShowNeteasePanel] = useState(false);
   const [cloudProvider, setCloudProvider] = useState<CloudProvider>('netease');
@@ -368,7 +452,27 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
   const [playMode, setPlayMode] = useState<PlayMode>('sequence');
   const [playQueue, setPlayQueue] = useState<NeteaseSong[]>([]);
   const [currentSongId, setCurrentSongId] = useState<number | string | null>(null);
-  const [currentSong, setCurrentSong] = useState<NeteaseSong | null>(null);
+  const [currentSong, setCurrentSongState] = useState<NeteaseSong | null>(null);
+
+  const setCurrentSong = (song: NeteaseSong | null) => {
+    setCurrentSongState(song);
+    if (onCurrentSongChange) {
+      onCurrentSongChange(song);
+    }
+  };
+
+  useEffect(() => {
+    onCurrentLyricsChange?.(lyricsText);
+  }, [lyricsText, onCurrentLyricsChange]);
+
+  useEffect(() => {
+    onLyricsVisibilityChange?.(displaySettings.showLyrics);
+  }, [displaySettings.showLyrics, onLyricsVisibilityChange]);
+
+  useEffect(() => {
+    onCoverVisibilityChange?.(displaySettings.showCover);
+  }, [displaySettings.showCover, onCoverVisibilityChange]);
+
   const [currentCover, setCurrentCover] = useState<string>('');
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [neteaseCookie, setNeteaseCookie] = useState(readNeteaseCookieStorage);
@@ -386,6 +490,19 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
   const [fetchedNeteasePlaylists, setFetchedNeteasePlaylists] = useState<NeteasePlaylistSummary[]>([]);
   const [fetchedQQPlaylists, setFetchedQQPlaylists] = useState<NeteasePlaylistSummary[]>([]);
+  const [pinnedNeteasePlaylists, setPinnedNeteasePlaylists] = useState<string[]>(readPinnedNeteasePlaylistsStorage);
+  const [pinnedQQPlaylists, setPinnedQQPlaylists] = useState<string[]>(readPinnedQQPlaylistsStorage);
+  const [showAllNetease, setShowAllNetease] = useState(false);
+  const [showAllQQ, setShowAllQQ] = useState(false);
+
+  useEffect(() => {
+    writePinnedNeteasePlaylistsStorage(pinnedNeteasePlaylists);
+  }, [pinnedNeteasePlaylists]);
+
+  useEffect(() => {
+    writePinnedQQPlaylistsStorage(pinnedQQPlaylists);
+  }, [pinnedQQPlaylists]);
+
   const [activeRightSidebarSelection, setActiveRightSidebarSelection] = useState<{type: 'local'|'netease_daily'|'netease_liked'|'netease_playlist'|'qq_liked'|'qq_playlist', id?: string | number}>({type: 'local', id: 'favorites'});
   const [hasSeenSideNavHint, setHasSeenSideNavHint] = useState(readSideNavHintSeen);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -465,6 +582,10 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
   useEffect(() => {
     writeDisplaySettingsStorage(displaySettings);
   }, [displaySettings]);
+
+  useEffect(() => {
+    writePlaybackQualitySettingsStorage(playbackQualitySettings);
+  }, [playbackQualitySettings]);
 
   useEffect(() => {
     if (isMobileSideNavOpen) markSideNavHintSeen();
@@ -980,7 +1101,7 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
       const nextIsPlaying = engine.isPlaying;
       const nextCurrentTime = engine.audioElement.currentTime || 0;
       const nextDuration = engine.audioElement.duration || 0;
-      const nextVolume = engine.audioElement.volume;
+      const nextVolume = engine.getVolume();
 
       setIsPlaying((current) => current === nextIsPlaying ? current : nextIsPlaying);
       setCurrentTime((current) => Math.abs(current - nextCurrentTime) < 0.05 ? current : nextCurrentTime);
@@ -1170,14 +1291,17 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
     const provider = song.provider || 'netease';
     const requestCookie = provider === 'netease' && isNeteaseCookieValid ? neteaseCookie : '';
     const requestQQCookie = provider === 'qq' && isQQCookieValid ? qqCookie : '';
+    
+    // persist last played
+    writeLastPlayedStorage({ type: 'cloud', song, trackName: `${song.artist ? `${song.artist} - ` : ''}${song.name}`, cover: song.cover || '', queue: queue || playQueue });
 
     try {
       if (provider === 'qq') {
         const mid = song.mid || song.songmid || String(song.id);
         const mediaMid = song.mediaMid || '';
-        const qqPlaybackQuality = 'exhigh';
+        const qqSong = { mid, mediaMid };
         const [urlResponse, lyricResponse] = await Promise.all([
-          fetch(`/api/qq/song/url?mid=${encodeURIComponent(mid)}&mediaMid=${encodeURIComponent(mediaMid)}&quality=${qqPlaybackQuality}`, {
+          fetch(buildQQPlaybackUrl('/api/qq/song/url', qqSong, playbackQualitySettings), {
             headers: createQQCookieHeaders(requestQQCookie),
           }),
           fetch(`/api/qq/lyric?mid=${encodeURIComponent(mid)}&id=${encodeURIComponent(String(song.qqId || ''))}`, {
@@ -1195,17 +1319,15 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
         }
 
         engine.init();
-        engine.loadUrl(`/api/qq/audio?mid=${encodeURIComponent(mid)}&mediaMid=${encodeURIComponent(mediaMid)}&quality=${qqPlaybackQuality}`);
+        engine.loadUrl(buildQQPlaybackUrl('/api/qq/audio', qqSong, playbackQualitySettings));
         engine.play();
         setSearchStatus('');
         setShowSearchPanel(false);
-        // persist last played
-        writeLastPlayedStorage({ type: 'cloud', song, trackName: `${song.artist ? `${song.artist} - ` : ''}${song.name}`, cover: song.cover || '' });
         return;
       }
 
       const [urlResponse, lyricResponse] = await Promise.all([
-        fetch(`/api/netease/url?id=${song.id}`, {
+        fetch(buildNeteasePlaybackUrl('/api/netease/url', song.id, playbackQualitySettings), {
           headers: createNeteaseCookieHeaders(requestCookie),
         }),
         fetch(`/api/netease/lyric?id=${song.id}`, {
@@ -1225,12 +1347,10 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
       }
 
       engine.init();
-      engine.loadUrl(`/api/netease/audio?id=${song.id}`);
+      engine.loadUrl(buildNeteasePlaybackUrl('/api/netease/audio', song.id, playbackQualitySettings));
       engine.play();
       setSearchStatus('');
       setShowSearchPanel(false);
-      // persist last played
-      writeLastPlayedStorage({ type: 'cloud', song, trackName: `${song.artist ? `${song.artist} - ` : ''}${song.name}`, cover: song.cover || '' });
     } catch (error) {
       console.warn('Unable to load song:', error);
       setSearchStatus('加载失败，正在尝试下一首...');
@@ -1276,6 +1396,9 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
     const song = last.song;
     // Restore UI state only (no autoplay — user clicks play to resume)
     setCurrentSong(song);
+    if (last.queue && last.queue.length > 0) {
+      setPlayQueue(last.queue);
+    }
     setCurrentSongId(songIdentity(song));
     setTrackName(last.trackName);
     setCurrentCover(last.cover || song.cover || '');
@@ -1285,10 +1408,10 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
       const mid = song.mid || song.songmid || String(song.id);
       const mediaMid = song.mediaMid || '';
       engine.init();
-      engine.loadUrl(`/api/qq/audio?mid=${encodeURIComponent(mid)}&mediaMid=${encodeURIComponent(mediaMid)}&quality=exhigh`);
+      engine.loadUrl(buildQQPlaybackUrl('/api/qq/audio', { mid, mediaMid }, playbackQualitySettings));
     } else {
       engine.init();
-      engine.loadUrl(`/api/netease/audio?id=${song.id}`);
+      engine.loadUrl(buildNeteasePlaybackUrl('/api/netease/audio', song.id, playbackQualitySettings));
     }
     // Do NOT call engine.play() — leave paused for user to resume
   }, []); // run once on mount
@@ -1371,14 +1494,51 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
 
   const activePlaylist = playlists.find((playlist) => playlist.id === activePlaylistId) || playlists[0];
 
+  const latestRefs = useRef({ displaySettings, playFromQueue });
+  useEffect(() => {
+    latestRefs.current = { displaySettings, playFromQueue };
+  });
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.code === 'Space') {
+      
+      const matchShortcut = (shortcut: string, event: KeyboardEvent) => {
+         if (!shortcut) return false;
+         const parts = shortcut.split('+');
+         const key = parts.pop() || '';
+         const ctrlKey = parts.includes('Ctrl');
+         const altKey = parts.includes('Alt');
+         const shiftKey = parts.includes('Shift');
+         
+         if (key === 'Space') {
+            return event.code === 'Space' && event.ctrlKey === ctrlKey && event.altKey === altKey && event.shiftKey === shiftKey;
+         }
+         
+         const eventKeyCapitalized = event.key.length === 1 ? event.key.toUpperCase() : event.key;
+         const keyCapitalized = key.length === 1 ? key.toUpperCase() : key;
+         
+         return (event.key === key || event.code === key || eventKeyCapitalized === keyCapitalized) && 
+                event.ctrlKey === ctrlKey && event.altKey === altKey && event.shiftKey === shiftKey;
+      };
+
+      const settings = latestRefs.current.displaySettings.shortcuts;
+      
+      if (settings?.playPause && matchShortcut(settings.playPause, e)) {
         e.preventDefault();
-        // Since togglePlay doesn't depend on states directly, we can call it. Wait, actually we can call engine.init() and engine.togglePlay() directly
         engine.init();
         engine.togglePlay();
+        return;
+      }
+      if (settings?.prevSong && matchShortcut(settings.prevSong, e)) {
+        e.preventDefault();
+        latestRefs.current.playFromQueue(-1);
+        return;
+      }
+      if (settings?.nextSong && matchShortcut(settings.nextSong, e)) {
+        e.preventDefault();
+        latestRefs.current.playFromQueue(1);
+        return;
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -1458,7 +1618,31 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
   return (
     <>
       {showSplash && <SplashScreen onComplete={handleSplashComplete} surfaceColor={surfaceHex} accentColor={accentHex} />}
+
+      {isPerspectiveEditMode && (
+        <div className="absolute top-8 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-3">
+          <div className="bg-black/60 backdrop-blur-md px-6 py-3 rounded-full border border-white/10 text-white font-medium text-sm tracking-widest shadow-2xl animate-in fade-in slide-in-from-top-4 pointer-events-auto">
+            正在编辑视角 (右键拖拽或双指滑动以平移视角)
+          </div>
+          <div className="flex gap-4 pointer-events-auto">
+            <button
+              onClick={() => onPerspectiveEditModeChange?.(false)}
+              className="px-8 py-2.5 bg-white text-black font-bold text-sm tracking-widest rounded-full hover:bg-white/90 transition-colors cursor-pointer"
+            >
+              确定
+            </button>
+            <button
+              onClick={() => onResetCamera?.()}
+              className="px-8 py-2.5 bg-black/40 text-white font-bold text-sm tracking-widest rounded-full border border-white/20 hover:bg-black/60 transition-colors cursor-pointer"
+            >
+              重置
+            </button>
+          </div>
+        </div>
+      )}
+
       <div 
+
         className="absolute inset-0 pointer-events-none z-10 flex w-full h-full" 
       style={{
         fontFamily: "'Helvetica Neue', Arial, sans-serif",
@@ -1558,6 +1742,13 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
               style={{ writingMode: 'vertical-rl' }}
             >
               上传
+            </button>
+            <button
+              onClick={() => { onPerspectiveEditModeChange?.(true); setIsMobileSideNavOpen(false); }}
+              className={`uppercase tracking-[0.2em] text-[10px] transition-opacity cursor-pointer ${isPerspectiveEditMode ? 'opacity-100' : 'opacity-40 hover:opacity-100'}`}
+              style={{ writingMode: 'vertical-rl' }}
+            >
+              视角
             </button>
             <button
               onClick={toggleFullscreen}
@@ -1667,21 +1858,67 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
                      <div className="w-8 h-8 rounded shrink-0 bg-white/10 flex items-center justify-center overflow-hidden text-white/40"><ListMusic size={14} /></div>
                      <div className="min-w-0 flex-1"><div className={`text-[12px] truncate ${activeRightSidebarSelection.type === 'netease_liked' ? 'text-white' : 'text-white/70'}`}>我喜欢的音乐</div></div>
                    </button>
-                   {fetchedNeteasePlaylists.map(playlist => (
-                     <button 
-                       key={playlist.id} 
-                       onClick={() => {
-                         setActiveRightSidebarSelection({ type: 'netease_playlist', id: playlist.id });
-                         loadNeteasePlaylistSongs(playlist);
-                       }}
-                       className={`w-full flex items-center gap-3 px-5 py-3 hover:bg-white/5 transition-colors text-left ${activeRightSidebarSelection.type === 'netease_playlist' && activeRightSidebarSelection.id === playlist.id ? 'bg-white/5' : ''}`}
-                     >
-                       <div className="w-8 h-8 rounded shrink-0 bg-white/10 flex items-center justify-center overflow-hidden">
-                         {playlist.cover ? <img src={playlist.cover} className="w-full h-full object-cover" /> : <ListMusic size={14} className="text-white/40" />}
-                       </div>
-                       <div className="min-w-0 flex-1"><div className={`text-[12px] truncate ${activeRightSidebarSelection.type === 'netease_playlist' && activeRightSidebarSelection.id === playlist.id ? 'text-white' : 'text-white/70'}`}>{playlist.name}</div></div>
-                     </button>
-                   ))}
+                    {(() => {
+                      const sorted = [...fetchedNeteasePlaylists].sort((a, b) => {
+                        const aPinned = pinnedNeteasePlaylists.includes(String(a.id));
+                        const bPinned = pinnedNeteasePlaylists.includes(String(b.id));
+                        if (aPinned && !bPinned) return -1;
+                        if (!aPinned && bPinned) return 1;
+                        return 0;
+                      });
+                      const displayCount = Math.max(5, pinnedNeteasePlaylists.length);
+                      const visiblePlaylists = showAllNetease ? sorted : sorted.slice(0, displayCount);
+                      const hasMore = sorted.length > displayCount;
+
+                      return (
+                        <>
+                          {visiblePlaylists.map(playlist => {
+                            const isPinned = pinnedNeteasePlaylists.includes(String(playlist.id));
+                            return (
+                              <button 
+                                key={playlist.id} 
+                                onClick={() => {
+                                  setActiveRightSidebarSelection({ type: 'netease_playlist', id: playlist.id });
+                                  loadNeteasePlaylistSongs(playlist);
+                                }}
+                                className={`w-full flex items-center gap-3 px-5 py-3 hover:bg-white/5 transition-colors text-left group ${activeRightSidebarSelection.type === 'netease_playlist' && activeRightSidebarSelection.id === playlist.id ? 'bg-white/5' : ''}`}
+                              >
+                                <div className="w-8 h-8 rounded shrink-0 bg-white/10 flex items-center justify-center overflow-hidden">
+                                  {playlist.cover ? <img src={playlist.cover} className="w-full h-full object-cover" /> : <ListMusic size={14} className="text-white/40" />}
+                                </div>
+                                <div className="min-w-0 flex-1"><div className={`text-[12px] truncate ${activeRightSidebarSelection.type === 'netease_playlist' && activeRightSidebarSelection.id === playlist.id ? 'text-white' : 'text-white/70'}`}>{playlist.name}</div></div>
+                                <div 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (isPinned) {
+                                      setPinnedNeteasePlaylists(prev => prev.filter(id => id !== String(playlist.id)));
+                                    } else {
+                                      setPinnedNeteasePlaylists(prev => [...prev, String(playlist.id)]);
+                                    }
+                                  }}
+                                  className={`shrink-0 p-1 rounded hover:bg-white/10 transition-colors ${isPinned ? 'opacity-100 text-cyan-400' : 'opacity-0 group-hover:opacity-100 text-white/40 hover:text-white'}`}
+                                  title={isPinned ? "取消置顶" : "置顶"}
+                                >
+                                  <Pin size={14} className={isPinned ? "fill-cyan-400/20" : ""} />
+                                </div>
+                              </button>
+                            );
+                          })}
+                          {hasMore && (
+                            <button
+                              onClick={() => setShowAllNetease(!showAllNetease)}
+                              className="w-full flex items-center justify-center gap-2 px-5 py-3 text-[10px] uppercase tracking-[0.1em] text-white/40 hover:text-white hover:bg-white/5 transition-colors"
+                            >
+                              {showAllNetease ? (
+                                <><ChevronUp size={14} /> 收起</>
+                              ) : (
+                                <><ChevronDown size={14} /> 展开全部歌单 ({sorted.length})</>
+                              )}
+                            </button>
+                          )}
+                        </>
+                      );
+                    })()}
                  </div>
                )}
 
@@ -1699,21 +1936,67 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
                      <div className="w-8 h-8 rounded shrink-0 bg-white/10 flex items-center justify-center overflow-hidden text-white/40"><ListMusic size={14} /></div>
                      <div className="min-w-0 flex-1"><div className={`text-[12px] truncate ${activeRightSidebarSelection.type === 'qq_liked' ? 'text-white' : 'text-white/70'}`}>我喜欢的音乐</div></div>
                    </button>
-                   {fetchedQQPlaylists.map(playlist => (
-                     <button 
-                       key={playlist.id} 
-                       onClick={() => {
-                         setActiveRightSidebarSelection({ type: 'qq_playlist', id: playlist.id });
-                         loadNeteasePlaylistSongs(playlist);
-                       }}
-                       className={`w-full flex items-center gap-3 px-5 py-3 hover:bg-white/5 transition-colors text-left ${activeRightSidebarSelection.type === 'qq_playlist' && activeRightSidebarSelection.id === playlist.id ? 'bg-white/5' : ''}`}
-                     >
-                       <div className="w-8 h-8 rounded shrink-0 bg-white/10 flex items-center justify-center overflow-hidden">
-                         {playlist.cover ? <img src={playlist.cover} className="w-full h-full object-cover" /> : <ListMusic size={14} className="text-white/40" />}
-                       </div>
-                       <div className="min-w-0 flex-1"><div className={`text-[12px] truncate ${activeRightSidebarSelection.type === 'qq_playlist' && activeRightSidebarSelection.id === playlist.id ? 'text-white' : 'text-white/70'}`}>{playlist.name}</div></div>
-                     </button>
-                   ))}
+                    {(() => {
+                      const sorted = [...fetchedQQPlaylists].sort((a, b) => {
+                        const aPinned = pinnedQQPlaylists.includes(String(a.id));
+                        const bPinned = pinnedQQPlaylists.includes(String(b.id));
+                        if (aPinned && !bPinned) return -1;
+                        if (!aPinned && bPinned) return 1;
+                        return 0;
+                      });
+                      const displayCount = Math.max(5, pinnedQQPlaylists.length);
+                      const visiblePlaylists = showAllQQ ? sorted : sorted.slice(0, displayCount);
+                      const hasMore = sorted.length > displayCount;
+
+                      return (
+                        <>
+                          {visiblePlaylists.map(playlist => {
+                            const isPinned = pinnedQQPlaylists.includes(String(playlist.id));
+                            return (
+                              <button 
+                                key={playlist.id} 
+                                onClick={() => {
+                                  setActiveRightSidebarSelection({ type: 'qq_playlist', id: playlist.id });
+                                  loadNeteasePlaylistSongs(playlist);
+                                }}
+                                className={`w-full flex items-center gap-3 px-5 py-3 hover:bg-white/5 transition-colors text-left group ${activeRightSidebarSelection.type === 'qq_playlist' && activeRightSidebarSelection.id === playlist.id ? 'bg-white/5' : ''}`}
+                              >
+                                <div className="w-8 h-8 rounded shrink-0 bg-white/10 flex items-center justify-center overflow-hidden">
+                                  {playlist.cover ? <img src={playlist.cover} className="w-full h-full object-cover" /> : <ListMusic size={14} className="text-white/40" />}
+                                </div>
+                                <div className="min-w-0 flex-1"><div className={`text-[12px] truncate ${activeRightSidebarSelection.type === 'qq_playlist' && activeRightSidebarSelection.id === playlist.id ? 'text-white' : 'text-white/70'}`}>{playlist.name}</div></div>
+                                <div 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (isPinned) {
+                                      setPinnedQQPlaylists(prev => prev.filter(id => id !== String(playlist.id)));
+                                    } else {
+                                      setPinnedQQPlaylists(prev => [...prev, String(playlist.id)]);
+                                    }
+                                  }}
+                                  className={`shrink-0 p-1 rounded hover:bg-white/10 transition-colors ${isPinned ? 'opacity-100 text-cyan-400' : 'opacity-0 group-hover:opacity-100 text-white/40 hover:text-white'}`}
+                                  title={isPinned ? "取消置顶" : "置顶"}
+                                >
+                                  <Pin size={14} className={isPinned ? "fill-cyan-400/20" : ""} />
+                                </div>
+                              </button>
+                            );
+                          })}
+                          {hasMore && (
+                            <button
+                              onClick={() => setShowAllQQ(!showAllQQ)}
+                              className="w-full flex items-center justify-center gap-2 px-5 py-3 text-[10px] uppercase tracking-[0.1em] text-white/40 hover:text-white hover:bg-white/5 transition-colors"
+                            >
+                              {showAllQQ ? (
+                                <><ChevronUp size={14} /> 收起</>
+                              ) : (
+                                <><ChevronDown size={14} /> 展开全部歌单 ({sorted.length})</>
+                              )}
+                            </button>
+                          )}
+                        </>
+                      );
+                    })()}
                  </div>
                )}
              </div>
@@ -2096,9 +2379,8 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
       )}
 
       {/* Player Panel Area with Hover Trigger */}
-      {showPlayerPanel && (
-        <div 
-          className="absolute bottom-0 left-0 w-full h-[120px] z-40 pointer-events-auto"
+      <div 
+        className="absolute bottom-0 left-0 w-full h-[120px] z-40 pointer-events-auto"
           onMouseEnter={(e) => {
             if (e.buttons !== 0) return;
             if (Date.now() - lastPointerUpTime.current < 100) return;
@@ -2236,8 +2518,9 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
                 className="opacity-50 hover:opacity-100 transition-opacity cursor-pointer flex-shrink-0" 
                 onClick={() => {
                   const val = volume > 0 ? 0 : 1;
-                  engine.audioElement.volume = val;
+                  engine.setVolume(val);
                   setVolume(val);
+                  window.localStorage.setItem('sonic-volume', val.toString());
                 }} 
               />
               <input 
@@ -2246,8 +2529,9 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
                 value={volume}
                 onChange={(e) => {
                   const val = parseFloat(e.target.value);
-                  engine.audioElement.volume = val;
+                  engine.setVolume(val);
                   setVolume(val);
+                  window.localStorage.setItem('sonic-volume', val.toString());
                 }}
                 className="w-12 h-1 accent-current opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer aspect-auto bg-white/20 appearance-none rounded-full"
                 style={{ accentColor: accentHex }}
@@ -2256,8 +2540,6 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
           </div>
           </div>
         </div>
-      )}
-
       {/* Clock Display */}
       <div style={{ pointerEvents: 'auto' }}>
         <ClockDisplay settings={displaySettings.clock} accentHex={accentHex} />
@@ -2312,10 +2594,14 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
           onCustomThemesChange={onCustomThemesChange}
           onThemeRotationChange={onThemeRotationChange}
           onGroundEqSettingsChange={onGroundEqSettingsChange}
+          playbackQualitySettings={playbackQualitySettings}
+          onPlaybackQualitySettingsChange={setPlaybackQualitySettings}
           lyricsSettings={lyricsSettings}
           onLyricsSettingsChange={onLyricsSettingsChange}
           displaySettings={displaySettings}
           onDisplaySettingsChange={setDisplaySettings}
+          globalSceneSettings={globalSceneSettings}
+          onGlobalSceneSettingsChange={onGlobalSceneSettingsChange}
         />
       )}
     </div>
@@ -2512,10 +2798,14 @@ function OptionsPanel({
   onCustomThemesChange,
   onThemeRotationChange,
   onGroundEqSettingsChange,
+  playbackQualitySettings,
+  onPlaybackQualitySettingsChange,
   lyricsSettings,
   onLyricsSettingsChange,
   displaySettings,
   onDisplaySettingsChange,
+  globalSceneSettings,
+  onGlobalSceneSettingsChange,
 }: {
   onClose: () => void;
   accentHex: string;
@@ -2551,29 +2841,33 @@ function OptionsPanel({
   onCustomThemesChange: (settings: CustomThemeSettings[], activeId?: string) => void;
   onThemeRotationChange: (settings: ThemeRotationSettings) => void;
   onGroundEqSettingsChange: (settings: StoredGroundEqSettings) => void;
+  playbackQualitySettings: PlaybackQualitySettings;
+  onPlaybackQualitySettingsChange: (settings: PlaybackQualitySettings | ((prev: PlaybackQualitySettings) => PlaybackQualitySettings)) => void;
   lyricsSettings: LyricsSettings;
   onLyricsSettingsChange: (settings: LyricsSettings) => void;
   displaySettings: DisplaySettings;
   onDisplaySettingsChange: (settings: DisplaySettings | ((prev: DisplaySettings) => DisplaySettings)) => void;
+  globalSceneSettings: { rotationSpeed: number };
+  onGlobalSceneSettingsChange: (patch: { rotationSpeed?: number }) => void;
 }) {
   const [activeTab, setActiveTab] = useState<OptionsTab>('Meteor');
   const [includeCookieInExport, setIncludeCookieInExport] = useState(false);
   const importPresetInputRef = useRef<HTMLInputElement>(null);
-  const tabs: OptionsTab[] = ['Pulse', 'Meteor', 'GroundEq', 'Color', 'Account', 'Lyrics', 'Display'];
-  const tabLabels: Record<OptionsTab, string> = {
+  const tabs: OptionsTab[] = ['Pulse', 'Meteor', 'FloatingBlocks', 'GroundEq', 'Color', 'Audio', 'Account', 'Lyrics', 'Display'];
+  const tabLabels: Partial<Record<OptionsTab, string>> = {
     Pulse: '脉冲特效',
     Meteor: '流星特效',
     GroundEq: '地面 EQ',
     Color: '自定义主题',
     Account: '账号登录',
     Lyrics: '歌词',
-    Display: '显示',
+    Display: '显示/快捷键',
   };
 
   const currentStyleConfig = lyricsSettings[lyricsSettings.style] || (lyricsSettings as any)['songyancai'] || {
     activeFontSize: 32, inactiveFontSize: 18, fontColor: '#ffffff', glowColor: '#00ffff',
     followThemeGlow: true, karaokeColor: '#00ffff', followThemeKaraoke: true,
-    position: 'center', triggerBand: 'subBass', fontFamily: 'serif'
+    position: 'center', triggerBand: 'subBass', fontFamily: 'serif', maxCharsPerLine: DEFAULT_MAX_CHARS_PER_LINE, spatialOrbitOffset: DEFAULT_SPATIAL_ORBIT_OFFSET
   };
   const updateConfig = (updates: any) => onLyricsSettingsChange({ ...lyricsSettings, [lyricsSettings.style]: { ...currentStyleConfig, ...updates } });
 
@@ -2681,12 +2975,18 @@ function OptionsPanel({
                   }`}
                   style={activeTab === tab ? activeControlStyle(accentHex) : undefined}
                >
-                  {tabLabels[tab]}
+                  {tab === 'Audio' ? '播放音质' : (tabLabels[tab] || '浮空方块')}
                </button>
             ))}
           </div>
 
-          {activeTab === 'GroundEq' ? (
+          {activeTab === 'FloatingBlocks' ? (
+            <FloatingBlocksPanel
+              accentHex={accentHex}
+              groundEqSettings={groundEqSettings}
+              onGroundEqSettingsChange={onGroundEqSettingsChange}
+            />
+          ) : activeTab === 'GroundEq' ? (
             <GroundEqPanel
               accentHex={accentHex}
               groundEqSettings={groundEqSettings}
@@ -2702,6 +3002,12 @@ function OptionsPanel({
               onThemeChange={onThemeChange}
               onCustomThemesChange={onCustomThemesChange}
               onThemeRotationChange={onThemeRotationChange}
+            />
+          ) : activeTab === 'Audio' ? (
+            <PlaybackQualityPanel
+              accentHex={accentHex}
+              settings={playbackQualitySettings}
+              onSettingsChange={onPlaybackQualitySettingsChange}
             />
           ) : activeTab === 'Account' ? (
             <AccountLoginPanel
@@ -2747,10 +3053,17 @@ function OptionsPanel({
                      >
                         动感跳跃
                      </button>
+                     <button
+                        className="px-4 py-2 text-[11px] uppercase tracking-widest rounded-sm border transition-colors"
+                        style={lyricsSettings.style === 'spatial-wall' ? activeControlStyle(accentHex) : { borderColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.5)' }}
+                        onClick={() => onLyricsSettingsChange({ ...lyricsSettings, style: 'spatial-wall' })}
+                     >
+                        3D 环绕
+                     </button>
                   </div>
                 </div>
 
-                {lyricsSettings.style === 'dynamic-bounce' && (
+                {(lyricsSettings.style === 'dynamic-bounce' || lyricsSettings.style === 'spatial-wall') && (
                    <>
                       <div className="h-[1px] bg-white/5 w-full"></div>
                       <div className="grid grid-cols-2 gap-8">
@@ -2790,42 +3103,58 @@ function OptionsPanel({
                            </select>
                         </div>
                       </div>
+                      {lyricsSettings.style === 'spatial-wall' && (
+                        <div>
+                          <div className="text-[12px] uppercase tracking-[0.15em] text-white/70 mb-3 flex justify-between">
+                             <span>左右环绕位置</span>
+                             <span className="text-white/40">{currentStyleConfig.spatialOrbitOffset}°</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={SPATIAL_ORBIT_OFFSET_MIN}
+                            max={SPATIAL_ORBIT_OFFSET_MAX}
+                            value={currentStyleConfig.spatialOrbitOffset}
+                            onChange={(e) => updateConfig({ spatialOrbitOffset: Number(e.target.value) })}
+                            className="w-full accent-current h-1 bg-white/20 appearance-none rounded-full"
+                            style={{ accentColor: accentHex }}
+                          />
+                        </div>
+                      )}
                    </>
                 )}
 
                 <div className="h-[1px] bg-white/5 w-full"></div>
 
-                <div className="grid grid-cols-2 gap-8">
-                  <div>
-                    <div className="text-[12px] uppercase tracking-[0.15em] text-white/70 mb-3 flex justify-between">
-                       <span>活跃歌词大小</span>
-                       <span className="text-white/40">{currentStyleConfig.activeFontSize}px</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={16}
-                      max={64}
-                      value={currentStyleConfig.activeFontSize}
-                      onChange={(e) => updateConfig({ activeFontSize: Number(e.target.value) })}
-                      className="w-full accent-current h-1 bg-white/20 appearance-none rounded-full"
-                      style={{ accentColor: accentHex }}
-                    />
+                <div>
+                  <div className="text-[12px] uppercase tracking-[0.15em] text-white/70 mb-3 flex justify-between">
+                     <span>活跃歌词大小</span>
+                     <span className="text-white/40">{currentStyleConfig.activeFontSize}px</span>
                   </div>
-                  <div>
-                    <div className="text-[12px] uppercase tracking-[0.15em] text-white/70 mb-3 flex justify-between">
-                       <span>普通歌词大小</span>
-                       <span className="text-white/40">{currentStyleConfig.inactiveFontSize}px</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={12}
-                      max={48}
-                      value={currentStyleConfig.inactiveFontSize}
-                      onChange={(e) => updateConfig({ inactiveFontSize: Number(e.target.value) })}
-                      className="w-full accent-current h-1 bg-white/20 appearance-none rounded-full"
-                      style={{ accentColor: accentHex }}
-                    />
+                  <input
+                    type="range"
+                    min={16}
+                    max={64}
+                    value={currentStyleConfig.activeFontSize}
+                    onChange={(e) => updateConfig({ activeFontSize: Number(e.target.value) })}
+                    className="w-full accent-current h-1 bg-white/20 appearance-none rounded-full"
+                    style={{ accentColor: accentHex }}
+                  />
+                </div>
+
+                <div>
+                  <div className="text-[12px] uppercase tracking-[0.15em] text-white/70 mb-3 flex justify-between">
+                     <span>每行歌词容量</span>
+                     <span className="text-white/40">{currentStyleConfig.maxCharsPerLine} 字</span>
                   </div>
+                  <input
+                    type="range"
+                    min={MAX_CHARS_PER_LINE_MIN}
+                    max={MAX_CHARS_PER_LINE_MAX}
+                    value={currentStyleConfig.maxCharsPerLine}
+                    onChange={(e) => updateConfig({ maxCharsPerLine: Number(e.target.value) })}
+                    className="w-full accent-current h-1 bg-white/20 appearance-none rounded-full"
+                    style={{ accentColor: accentHex }}
+                  />
                 </div>
 
                 <div className="h-[1px] bg-white/5 w-full"></div>
@@ -2945,6 +3274,113 @@ function OptionsPanel({
                       <input type="checkbox" checked={displaySettings.showLyrics} onChange={(e) => onDisplaySettingsChange(s => ({ ...s, showLyrics: e.target.checked }))} className="w-3 h-3" style={{ accentColor: accentHex }} />
                       显示歌词
                     </label>
+                    <label className="flex items-center gap-2 text-[11px] uppercase tracking-widest text-white/50 cursor-pointer hover:text-white transition-colors">
+                      <input type="checkbox" checked={displaySettings.showCover} onChange={(e) => onDisplaySettingsChange(s => ({ ...s, showCover: e.target.checked }))} className="w-3 h-3" style={{ accentColor: accentHex }} />
+                      显示封面
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white/[0.02] border border-white/5 rounded-sm p-4 flex flex-col gap-5">
+                <div>
+                  <div className="text-[12px] uppercase tracking-[0.15em] text-white/70 mb-3">场景与控制 (Scene & Controls)</div>
+                  
+                  <div className="flex flex-col gap-4">
+                    <div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-[11px] text-white/75">场景旋转速度</div>
+                          <div className="mt-1 text-[9px] text-white/35">全局控制地面自动旋转速度，调到 0 就停止</div>
+                        </div>
+                        <div className="text-[11px]" style={{ color: accentHex }}>{globalSceneSettings.rotationSpeed.toFixed(2)}</div>
+                      </div>
+                      <ThrottledRangeInput
+                        min="0"
+                        max="2"
+                        step="0.05"
+                        value={globalSceneSettings.rotationSpeed}
+                        onChange={(val: number) => onGlobalSceneSettingsChange({ rotationSpeed: val })}
+                        className="mt-3 w-full accent-current h-1"
+                        style={{ accentColor: accentHex }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white/[0.02] border border-white/5 rounded-sm p-4 flex flex-col gap-4">
+                <div className="text-[12px] uppercase tracking-[0.15em] text-white/70 mb-1">快捷键 (Shortcuts)</div>
+                <div className="text-[10px] text-white/40 mb-2">点击输入框后按下组合键以修改</div>
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[11px] uppercase tracking-widest text-white/50">播放 / 暂停</div>
+                    <input 
+                      type="text" 
+                      value={displaySettings.shortcuts?.playPause || 'Space'} 
+                      readOnly 
+                      placeholder="按下快捷键"
+                      className="bg-black/20 border border-white/10 rounded-sm px-3 py-1 text-[11px] text-white/80 w-40 text-center outline-none focus:border-white/30 transition-colors cursor-pointer"
+                      onKeyDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        let keys = [];
+                        if (e.ctrlKey) keys.push('Ctrl');
+                        if (e.altKey) keys.push('Alt');
+                        if (e.shiftKey) keys.push('Shift');
+                        if (e.key !== 'Control' && e.key !== 'Alt' && e.key !== 'Shift' && e.key !== 'Meta') {
+                          const keyName = e.code === 'Space' ? 'Space' : (e.key.length === 1 ? e.key.toUpperCase() : e.key);
+                          keys.push(keyName);
+                          onDisplaySettingsChange(s => ({ ...s, shortcuts: { ...s.shortcuts, playPause: keys.join('+') } }));
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-[11px] uppercase tracking-widest text-white/50">上一首</div>
+                    <input 
+                      type="text" 
+                      value={displaySettings.shortcuts?.prevSong || 'Ctrl+ArrowLeft'} 
+                      readOnly 
+                      placeholder="按下快捷键"
+                      className="bg-black/20 border border-white/10 rounded-sm px-3 py-1 text-[11px] text-white/80 w-40 text-center outline-none focus:border-white/30 transition-colors cursor-pointer"
+                      onKeyDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        let keys = [];
+                        if (e.ctrlKey) keys.push('Ctrl');
+                        if (e.altKey) keys.push('Alt');
+                        if (e.shiftKey) keys.push('Shift');
+                        if (e.key !== 'Control' && e.key !== 'Alt' && e.key !== 'Shift' && e.key !== 'Meta') {
+                          const keyName = e.code === 'Space' ? 'Space' : (e.key.length === 1 ? e.key.toUpperCase() : e.key);
+                          keys.push(keyName);
+                          onDisplaySettingsChange(s => ({ ...s, shortcuts: { ...s.shortcuts, prevSong: keys.join('+') } }));
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-[11px] uppercase tracking-widest text-white/50">下一首</div>
+                    <input 
+                      type="text" 
+                      value={displaySettings.shortcuts?.nextSong || 'Ctrl+ArrowRight'} 
+                      readOnly 
+                      placeholder="按下快捷键"
+                      className="bg-black/20 border border-white/10 rounded-sm px-3 py-1 text-[11px] text-white/80 w-40 text-center outline-none focus:border-white/30 transition-colors cursor-pointer"
+                      onKeyDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        let keys = [];
+                        if (e.ctrlKey) keys.push('Ctrl');
+                        if (e.altKey) keys.push('Alt');
+                        if (e.shiftKey) keys.push('Shift');
+                        if (e.key !== 'Control' && e.key !== 'Alt' && e.key !== 'Shift' && e.key !== 'Meta') {
+                          const keyName = e.code === 'Space' ? 'Space' : (e.key.length === 1 ? e.key.toUpperCase() : e.key);
+                          keys.push(keyName);
+                          onDisplaySettingsChange(s => ({ ...s, shortcuts: { ...s.shortcuts, nextSong: keys.join('+') } }));
+                        }
+                      }}
+                    />
                   </div>
                 </div>
               </div>
@@ -3014,6 +3450,123 @@ function OptionsPanel({
   );
 }
 
+function FloatingBlocksPanel({
+  accentHex,
+  groundEqSettings,
+  onGroundEqSettingsChange,
+}: {
+  accentHex: string;
+  groundEqSettings: StoredGroundEqSettings;
+  onGroundEqSettingsChange: (settings: StoredGroundEqSettings) => void;
+}) {
+  const enabled = groundEqSettings.floatingBlocksEnabled ?? DEFAULT_FLOATING_BLOCKS_ENABLED;
+  const intensity = groundEqSettings.floatingBlockIntensity ?? DEFAULT_FLOATING_BLOCK_INTENSITY;
+  const minSize = groundEqSettings.floatingBlockMinSize ?? DEFAULT_FLOATING_BLOCK_MIN_SIZE;
+  const maxSize = groundEqSettings.floatingBlockMaxSize ?? DEFAULT_FLOATING_BLOCK_MAX_SIZE;
+  const speed = groundEqSettings.floatingBlockSpeed ?? DEFAULT_FLOATING_BLOCK_SPEED;
+  const count = groundEqSettings.floatingBlockCount ?? DEFAULT_FLOATING_BLOCK_COUNT;
+
+  const commit = (updates: Partial<StoredGroundEqSettings>) => {
+    onGroundEqSettingsChange({ ...groundEqSettings, ...updates });
+  };
+
+  const clampSetting = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
+  const commitMinSize = (value: number) => commit({ floatingBlockMinSize: Math.min(clampSetting(value), maxSize) });
+  const commitMaxSize = (value: number) => commit({ floatingBlockMaxSize: Math.max(clampSetting(value), minSize) });
+
+  return (
+    <div className="grid gap-5">
+      <div className="flex items-start justify-between gap-4 border border-white/10 bg-white/[0.03] rounded-sm p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+        <div>
+          <div className="text-[12px] uppercase tracking-[0.18em] text-white/70 mb-2">浮空方块特效</div>
+          <div className="text-[11px] leading-relaxed text-white/45">空气中的小方块会跟随底鼓和低频能量放大缩小，适合做更明显的空间跳动层。</div>
+        </div>
+        <label className="flex shrink-0 items-center gap-2 cursor-pointer rounded-sm border border-white/10 px-3 py-2">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(event) => commit({ floatingBlocksEnabled: event.target.checked })}
+            className="h-4 w-4 rounded-sm border-white/20 bg-black/50"
+            style={{ accentColor: accentHex }}
+          />
+          <span className="text-[10px] uppercase tracking-[0.12em] text-white/55">启用</span>
+        </label>
+      </div>
+
+      <div className="rounded-sm border bg-white/[0.025] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]" style={{ borderColor: colorWithAlpha(accentHex, 0.16) }}>
+        {[
+          {
+            label: '变化幅度',
+            hint: '整体放大缩小的冲击感',
+            value: intensity,
+            minLabel: '克制',
+            maxLabel: '强烈',
+            onChange: (value: number) => commit({ floatingBlockIntensity: clampSetting(value) }),
+          },
+          {
+            label: '最小大小',
+            hint: '没有底鼓时的基础尺寸',
+            value: minSize,
+            minLabel: '细小',
+            maxLabel: '明显',
+            onChange: commitMinSize,
+          },
+          {
+            label: '最大大小',
+            hint: '底鼓触发时允许到达的最大尺寸',
+            value: maxSize,
+            minLabel: '收敛',
+            maxLabel: '巨大',
+            onChange: commitMaxSize,
+          },
+          {
+            label: '变化速度',
+            hint: '从小到大、再回落的响应速度',
+            value: speed,
+            minLabel: '缓慢',
+            maxLabel: '迅速',
+            onChange: (value: number) => commit({ floatingBlockSpeed: clampSetting(value) }),
+          },
+          {
+            label: '方块数量',
+            hint: '场景中漂浮方块的总数',
+            value: count,
+            minLabel: '稀少',
+            maxLabel: '密集',
+            onChange: (value: number) => commit({ floatingBlockCount: clampSetting(value) }),
+          },
+        ].map((control) => (
+          <div key={control.label} className="mt-6 first:mt-0">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-[12px] uppercase tracking-[0.16em] text-white/70">{control.label}</div>
+                <div className="mt-1 text-[10px] leading-relaxed text-white/38">{control.hint}</div>
+              </div>
+              <div className="text-[13px] font-medium tabular-nums" style={{ color: accentHex }}>{control.value}</div>
+            </div>
+            <div className="mt-4 grid grid-cols-[42px_minmax(0,1fr)_42px] items-center gap-3">
+              <span className="text-[10px] uppercase tracking-[0.12em] text-white/35">{control.minLabel}</span>
+              <input
+                aria-label={control.label}
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={control.value}
+                onChange={(event) => control.onChange(Number(event.target.value))}
+                className="h-1 w-full cursor-pointer accent-current disabled:opacity-40"
+                style={{ accentColor: accentHex }}
+                disabled={!enabled}
+              />
+              <span className="text-right text-[10px] uppercase tracking-[0.12em] text-white/35">{control.maxLabel}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function GroundEqPanel({
   accentHex,
   groundEqSettings,
@@ -3025,11 +3578,40 @@ function GroundEqPanel({
 }) {
   const [bands, setBands] = useState(groundEqSettings.bands);
   const [motionSpeed, setMotionSpeed] = useState(groundEqSettings.motionSpeed ?? DEFAULT_GROUND_MOTION_SPEED);
+  const [amplitude, setAmplitude] = useState(groundEqSettings.amplitude ?? 50);
+  const [terrainDensity, setTerrainDensity] = useState(groundEqSettings.terrainDensity ?? DEFAULT_TERRAIN_DENSITY);
+  const [floatingBlocksEnabled, setFloatingBlocksEnabled] = useState(groundEqSettings.floatingBlocksEnabled ?? DEFAULT_FLOATING_BLOCKS_ENABLED);
+  const [floatingBlockIntensity, setFloatingBlockIntensity] = useState(groundEqSettings.floatingBlockIntensity ?? DEFAULT_FLOATING_BLOCK_INTENSITY);
+  const [floatingBlockMinSize, setFloatingBlockMinSize] = useState(groundEqSettings.floatingBlockMinSize ?? DEFAULT_FLOATING_BLOCK_MIN_SIZE);
+  const [floatingBlockMaxSize, setFloatingBlockMaxSize] = useState(groundEqSettings.floatingBlockMaxSize ?? DEFAULT_FLOATING_BLOCK_MAX_SIZE);
+  const [floatingBlockSpeed, setFloatingBlockSpeed] = useState(groundEqSettings.floatingBlockSpeed ?? DEFAULT_FLOATING_BLOCK_SPEED);
+  const [floatingBlockCount, setFloatingBlockCount] = useState(groundEqSettings.floatingBlockCount ?? DEFAULT_FLOATING_BLOCK_COUNT);
+  const [enabledBands, setEnabledBands] = useState(groundEqSettings.enabledBands ?? new Array(8).fill(true));
 
   useEffect(() => {
     setBands(groundEqSettings.bands);
     setMotionSpeed(groundEqSettings.motionSpeed ?? DEFAULT_GROUND_MOTION_SPEED);
-  }, [groundEqSettings.bands, groundEqSettings.motionSpeed]);
+    setAmplitude(groundEqSettings.amplitude ?? 50);
+    setTerrainDensity(groundEqSettings.terrainDensity ?? DEFAULT_TERRAIN_DENSITY);
+    setFloatingBlocksEnabled(groundEqSettings.floatingBlocksEnabled ?? DEFAULT_FLOATING_BLOCKS_ENABLED);
+    setFloatingBlockIntensity(groundEqSettings.floatingBlockIntensity ?? DEFAULT_FLOATING_BLOCK_INTENSITY);
+    setFloatingBlockMinSize(groundEqSettings.floatingBlockMinSize ?? DEFAULT_FLOATING_BLOCK_MIN_SIZE);
+    setFloatingBlockMaxSize(groundEqSettings.floatingBlockMaxSize ?? DEFAULT_FLOATING_BLOCK_MAX_SIZE);
+    setFloatingBlockSpeed(groundEqSettings.floatingBlockSpeed ?? DEFAULT_FLOATING_BLOCK_SPEED);
+    setFloatingBlockCount(groundEqSettings.floatingBlockCount ?? DEFAULT_FLOATING_BLOCK_COUNT);
+    setEnabledBands(groundEqSettings.enabledBands ?? new Array(8).fill(true));
+  }, [
+    groundEqSettings.bands,
+    groundEqSettings.motionSpeed,
+    groundEqSettings.amplitude,
+    groundEqSettings.terrainDensity,
+    groundEqSettings.floatingBlocksEnabled,
+    groundEqSettings.floatingBlockIntensity,
+    groundEqSettings.floatingBlockMinSize,
+    groundEqSettings.floatingBlockMaxSize,
+    groundEqSettings.floatingBlockSpeed,
+    groundEqSettings.enabledBands,
+  ]);
 
   const bandNotes: Array<{
     id: GroundEqBandId;
@@ -3055,21 +3637,76 @@ function GroundEqPanel({
       index === bandIndex ? Math.max(0, Math.min(100, Math.round(nextValue))) : value
     ));
     setBands(nextBands);
-    onGroundEqSettingsChange({ bands: nextBands, motionSpeed });
+    onGroundEqSettingsChange({ bands: nextBands, motionSpeed, amplitude, terrainDensity, floatingBlocksEnabled, floatingBlockIntensity, floatingBlockMinSize, floatingBlockMaxSize, floatingBlockSpeed, floatingBlockCount, enabledBands });
+  };
+
+  const commitEnabledBand = (bandIndex: number, nextEnabled: boolean) => {
+    const nextEnabledBands = enabledBands.map((value, index) => (
+      index === bandIndex ? nextEnabled : value
+    ));
+    setEnabledBands(nextEnabledBands);
+    onGroundEqSettingsChange({ bands, motionSpeed, amplitude, terrainDensity, floatingBlocksEnabled, floatingBlockIntensity, floatingBlockMinSize, floatingBlockMaxSize, floatingBlockSpeed, floatingBlockCount, enabledBands: nextEnabledBands });
   };
 
   const commitMotionSpeed = (nextValue: number) => {
     const nextMotionSpeed = Math.max(0, Math.min(100, Math.round(nextValue)));
     setMotionSpeed(nextMotionSpeed);
-    onGroundEqSettingsChange({ bands, motionSpeed: nextMotionSpeed });
+    onGroundEqSettingsChange({ bands, motionSpeed: nextMotionSpeed, amplitude, terrainDensity, floatingBlocksEnabled, floatingBlockIntensity, floatingBlockMinSize, floatingBlockMaxSize, floatingBlockSpeed, floatingBlockCount, enabledBands });
+  };
+
+  const commitAmplitude = (nextValue: number) => {
+    const nextAmplitude = Math.max(0, Math.min(100, Math.round(nextValue)));
+    setAmplitude(nextAmplitude);
+    onGroundEqSettingsChange({ bands, motionSpeed, amplitude: nextAmplitude, terrainDensity, floatingBlocksEnabled, floatingBlockIntensity, floatingBlockMinSize, floatingBlockMaxSize, floatingBlockSpeed, floatingBlockCount, enabledBands });
+  };
+
+  const commitTerrainDensity = (nextValue: number) => {
+    const nextTerrainDensity = Math.max(0, Math.min(100, Math.round(nextValue)));
+    setTerrainDensity(nextTerrainDensity);
+    onGroundEqSettingsChange({ bands, motionSpeed, amplitude, terrainDensity: nextTerrainDensity, floatingBlocksEnabled, floatingBlockIntensity, floatingBlockMinSize, floatingBlockMaxSize, floatingBlockSpeed, floatingBlockCount, enabledBands });
+  };
+
+  const commitFloatingBlocksEnabled = (nextEnabled: boolean) => {
+    setFloatingBlocksEnabled(nextEnabled);
+    onGroundEqSettingsChange({ bands, motionSpeed, amplitude, terrainDensity, floatingBlocksEnabled: nextEnabled, floatingBlockIntensity, floatingBlockMinSize, floatingBlockMaxSize, floatingBlockSpeed, floatingBlockCount, enabledBands });
+  };
+
+  const commitFloatingBlockIntensity = (nextValue: number) => {
+    const nextFloatingBlockIntensity = Math.max(0, Math.min(100, Math.round(nextValue)));
+    setFloatingBlockIntensity(nextFloatingBlockIntensity);
+    onGroundEqSettingsChange({ bands, motionSpeed, amplitude, terrainDensity, floatingBlocksEnabled, floatingBlockIntensity: nextFloatingBlockIntensity, floatingBlockMinSize, floatingBlockMaxSize, floatingBlockSpeed, floatingBlockCount, enabledBands });
   };
 
   const resetBands = () => {
     const nextBands = [...defaultGroundEqBands];
+    const nextEnabledBands = new Array(8).fill(true);
     setBands(nextBands);
+    setEnabledBands(nextEnabledBands);
     setMotionSpeed(DEFAULT_GROUND_MOTION_SPEED);
-    onGroundEqSettingsChange({ bands: nextBands, motionSpeed: DEFAULT_GROUND_MOTION_SPEED });
+    setAmplitude(50);
+    setTerrainDensity(DEFAULT_TERRAIN_DENSITY);
+    setFloatingBlocksEnabled(DEFAULT_FLOATING_BLOCKS_ENABLED);
+    setFloatingBlockIntensity(DEFAULT_FLOATING_BLOCK_INTENSITY);
+    setFloatingBlockMinSize(DEFAULT_FLOATING_BLOCK_MIN_SIZE);
+    setFloatingBlockMaxSize(DEFAULT_FLOATING_BLOCK_MAX_SIZE);
+    setFloatingBlockSpeed(DEFAULT_FLOATING_BLOCK_SPEED);
+    onGroundEqSettingsChange({
+      bands: nextBands,
+      motionSpeed: DEFAULT_GROUND_MOTION_SPEED,
+      amplitude: 50,
+      terrainDensity: DEFAULT_TERRAIN_DENSITY,
+      floatingBlocksEnabled: DEFAULT_FLOATING_BLOCKS_ENABLED,
+      floatingBlockIntensity: DEFAULT_FLOATING_BLOCK_INTENSITY,
+      floatingBlockMinSize: DEFAULT_FLOATING_BLOCK_MIN_SIZE,
+      floatingBlockMaxSize: DEFAULT_FLOATING_BLOCK_MAX_SIZE,
+      floatingBlockSpeed: DEFAULT_FLOATING_BLOCK_SPEED,
+      floatingBlockCount: DEFAULT_FLOATING_BLOCK_COUNT,
+      enabledBands: nextEnabledBands,
+    });
   };
+
+  const terrainGridSettings = deriveTerrainGridSettings(terrainDensity);
+  const terrainBlockCount = terrainGridSettings.instanceCount.toLocaleString();
 
   return (
     <div className="grid gap-5">
@@ -3108,6 +3745,54 @@ function GroundEqPanel({
             style={{ accentColor: accentHex }}
           />
           <span className="text-right text-[10px] uppercase tracking-[0.12em] text-white/35">敏捷</span>
+        </div>
+        
+        <div className="mt-6 flex items-center justify-between gap-4">
+          <div>
+            <div className="text-[12px] uppercase tracking-[0.16em] text-white/70">起伏高度</div>
+            <div className="mt-1 text-[10px] leading-relaxed text-white/38">控制音乐触发的地形高低缩放</div>
+          </div>
+          <div className="text-[13px] font-medium tabular-nums" style={{ color: accentHex }}>{amplitude}</div>
+        </div>
+        <div className="mt-4 grid grid-cols-[42px_minmax(0,1fr)_42px] items-center gap-3">
+          <span className="text-[10px] uppercase tracking-[0.12em] text-white/35">平缓</span>
+          <input
+            aria-label="地面起伏高度"
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={amplitude}
+            onChange={(event) => commitAmplitude(Number(event.target.value))}
+            className="h-1 w-full cursor-pointer accent-current"
+            style={{ accentColor: accentHex }}
+          />
+          <span className="text-right text-[10px] uppercase tracking-[0.12em] text-white/35">高耸</span>
+        </div>
+        <div className="mt-6 flex items-center justify-between gap-4">
+          <div>
+            <div className="text-[12px] uppercase tracking-[0.16em] text-white/70">方块密度</div>
+            <div className="mt-1 text-[10px] leading-relaxed text-white/38">低性能时方块更大更少，高性能时方块更小更多</div>
+          </div>
+          <div className="text-right">
+            <div className="text-[13px] font-medium tabular-nums" style={{ color: accentHex }}>{terrainDensity}</div>
+            <div className="mt-1 text-[10px] tabular-nums text-white/35">{terrainBlockCount} blocks</div>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-[42px_minmax(0,1fr)_42px] items-center gap-3">
+          <span className="text-[10px] uppercase tracking-[0.12em] text-white/35">性能</span>
+          <input
+            aria-label="方块密度"
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={terrainDensity}
+            onChange={(event) => commitTerrainDensity(Number(event.target.value))}
+            className="h-1 w-full cursor-pointer accent-current"
+            style={{ accentColor: accentHex }}
+          />
+          <span className="text-right text-[10px] uppercase tracking-[0.12em] text-white/35">细节</span>
         </div>
       </div>
 
@@ -3151,6 +3836,22 @@ function GroundEqPanel({
                   <div className="mt-1 text-[10px] uppercase tracking-[0.12em]" style={{ color: note.color }}>{note.english}</div>
                   <div className="mt-2 text-[10px] leading-relaxed text-white/35">{note.effect}</div>
                   <div className="mt-1 min-h-[42px] text-[10px] leading-relaxed text-white/35">{note.description}</div>
+                  <label className="mt-3 flex items-center gap-2 cursor-pointer group">
+                    <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-[3px] border transition-colors ${enabledBands[index] ? 'border-transparent text-black' : 'border-white/20 bg-transparent text-transparent'}`} style={{ backgroundColor: enabledBands[index] ? note.color : undefined }}>
+                      <svg width="10" height="10" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M10 3L4.5 8.5L2 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </div>
+                    <span className="text-[10px] uppercase tracking-[0.08em] text-white/50 group-hover:text-white/80 transition-colors select-none">
+                      启用特效
+                    </span>
+                    <input
+                      type="checkbox"
+                      className="hidden"
+                      checked={enabledBands[index]}
+                      onChange={(e) => commitEnabledBand(index, e.target.checked)}
+                    />
+                  </label>
                 </div>
               </div>
             );
@@ -3311,6 +4012,7 @@ function CustomColorPanel({
         : preset
     ));
     savePresets(nextPresets, activePreset.id);
+    onThemeChange(CUSTOM_THEME_ID);
   };
 
   const useCustomTheme = (presetId: string) => {
@@ -3354,41 +4056,6 @@ function CustomColorPanel({
           className="shrink-0 px-3 py-2 rounded-sm border border-white/10 text-[10px] uppercase tracking-[0.15em] text-white/55 hover:text-white transition-colors"
         >
           新建主题
-        </button>
-      </div>
-
-      <div className="rounded-sm border bg-white/[0.025] px-4 py-3" style={{ borderColor: colorWithAlpha(accentHex, 0.16) }}>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-[12px] text-white/75">旋转速度</div>
-            <div className="mt-1 text-[10px] text-white/35">控制地面镜头自动旋转，调到 0 就停止自动旋转</div>
-          </div>
-          <div className="text-[12px]" style={{ color: accentHex }}>{activePreset.rotationSpeed.toFixed(2)}</div>
-        </div>
-        <ThrottledRangeInput
-          min="0"
-          max="2"
-          step="0.05"
-          value={activePreset.rotationSpeed}
-          onChange={(val: number) => updateCustomTheme({ rotationSpeed: val })}
-          className="mt-3 w-full accent-current h-1"
-          style={{ accentColor: accentHex }}
-        />
-      </div>
-
-      <div className="flex items-center justify-between gap-4 rounded-sm border bg-white/[0.025] px-4 py-3" style={{ borderColor: colorWithAlpha(accentHex, 0.16) }}>
-        <div>
-          <div className="text-[12px] text-white/75">显示播放器卡片</div>
-          <div className="mt-1 text-[10px] text-white/35">控制右上角播放卡片、歌名、进度和切歌按钮是否显示</div>
-        </div>
-        <button
-          onClick={() => updateCustomTheme({ showPlayerPanel: !activePreset.showPlayerPanel })}
-          className={`shrink-0 px-3 py-2 rounded-sm border text-[10px] uppercase tracking-[0.15em] transition-colors ${
-            activePreset.showPlayerPanel ? '' : 'border-white/10 text-white/45 hover:text-white'
-          }`}
-          style={activePreset.showPlayerPanel ? activeControlStyle(accentHex) : undefined}
-        >
-          {activePreset.showPlayerPanel ? '显示' : '隐藏'}
         </button>
       </div>
 
@@ -3617,6 +4284,62 @@ function CustomColorPanel({
         >
           使用这个主题
         </button>
+      </div>
+    </div>
+  );
+}
+
+function PlaybackQualityPanel({
+  accentHex,
+  settings,
+  onSettingsChange,
+}: {
+  accentHex: string;
+  settings: PlaybackQualitySettings;
+  onSettingsChange: (settings: PlaybackQualitySettings | ((prev: PlaybackQualitySettings) => PlaybackQualitySettings)) => void;
+}) {
+  const optionButtonClass = 'rounded-sm border px-3 py-2 text-[11px] tracking-[0.08em] transition-colors';
+
+  return (
+    <div className="grid gap-5">
+      <div className="rounded-sm border border-white/10 bg-white/[0.035] p-5">
+        <div className="text-[12px] uppercase tracking-[0.18em] text-white/65">QQ Music</div>
+        <div className="mt-2 text-[11px] leading-relaxed text-white/45">
+          QQ 会从所选音质开始尝试，并在不可用时沿用现有降级逻辑。
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {QQ_PLAYBACK_QUALITY_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={optionButtonClass}
+              style={settings.qqQuality === option.value ? activeControlStyle(accentHex) : { borderColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.55)' }}
+              onClick={() => onSettingsChange((prev) => ({ ...prev, qqQuality: option.value as QQPlaybackQuality }))}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-sm border border-white/10 bg-white/[0.035] p-5">
+        <div className="text-[12px] uppercase tracking-[0.18em] text-white/65">Netease Cloud Music</div>
+        <div className="mt-2 text-[11px] leading-relaxed text-white/45">
+          网易云会把所选码率传给播放地址接口；可播放性仍取决于账号、版权和地区权限。
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {NETEASE_PLAYBACK_BITRATE_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={optionButtonClass}
+              style={settings.neteaseBitrate === option.value ? activeControlStyle(accentHex) : { borderColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.55)' }}
+              onClick={() => onSettingsChange((prev) => ({ ...prev, neteaseBitrate: option.value as NeteasePlaybackBitrate }))}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

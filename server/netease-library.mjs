@@ -25,6 +25,16 @@ export function mapNeteaseSong(song) {
   };
 }
 
+export function mapNeteasePlaylistSummary(playlist) {
+  return {
+    provider: 'netease',
+    id: playlist?.id,
+    name: playlist?.name || '',
+    trackCount: Number(playlist?.trackCount || 0),
+    cover: playlist?.coverImgUrl || playlist?.picUrl || playlist?.cover || '',
+  };
+}
+
 function readTrackId(track) {
   const id = typeof track === 'object' && track !== null ? track.id : track;
   const numeric = Number(id);

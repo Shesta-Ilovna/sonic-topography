@@ -12,6 +12,7 @@ export interface StoredTriggerConfig {
   bandStart: number;
   bandEnd: number;
   pulseStrength: number;
+  autoTrack: boolean;
 }
 
 export interface StoredTriggerSettings {
@@ -32,6 +33,7 @@ export function normalizeTriggerConfig(value: Partial<StoredTriggerConfig> | und
     ...(Number.isFinite(value.bandStart) ? { bandStart: clampInt(Number(value.bandStart), 0, 250) } : {}),
     ...(Number.isFinite(value.bandEnd) ? { bandEnd: clampInt(Number(value.bandEnd), 2, 256) } : {}),
     ...(Number.isFinite(value.pulseStrength) ? { pulseStrength: clamp(Number(value.pulseStrength), 0, 5) } : {}),
+    ...(typeof value.autoTrack === 'boolean' ? { autoTrack: value.autoTrack } : {}),
   };
 }
 

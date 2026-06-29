@@ -10,12 +10,13 @@ Last fully verified commit: `unknown`
 | --- | --- | --- | --- |
 | Electron shell, window chrome, login bridge, installer config | `desktop/main.js`, `desktop/preload.cjs`, `scripts/dev-electron.mjs`, `package.json` | `src/lib/neteaseCookie.test.ts`, `src/lib/qqCookie.test.ts` | `npm run dev:electron`, `npm run build:electron:dir`, `npm run build:electron` |
 | Player UI, sidebar, search, cloud music panel | `src/components/UI/UI.tsx`, `src/index.css`, `src/App.tsx` | `src/lib/triggerSettings.test.ts`, `src/lib/presetTransfer.test.ts` | `npm run lint`, `npm run build`, `npm run dev:electron` |
+| Playback quality selection | `src/components/UI/UI.tsx`, `src/lib/playbackQuality.ts`, `server/netease-playback.mjs`, `vite.config.ts`, `local-server.mjs`, `server/qq-music.mjs` | `src/lib/playbackQuality.test.ts`, `src/lib/neteasePlayback.test.ts`, `src/lib/qqMusicLibrary.test.ts` | `npx tsx src/lib/playbackQuality.test.ts`, `npx tsx src/lib/neteasePlayback.test.ts`, `npx tsx src/lib/qqMusicLibrary.test.ts`, `npm run lint`, `npm run build` |
 | Netease API, cookies, liked songs, playlists, daily recommendations | `vite.config.ts`, `local-server.mjs`, `server/netease-library.mjs`, `src/lib/neteaseCookie.ts` | `src/lib/neteaseCookie.test.ts`, `src/lib/neteasePlaylist.test.ts` | `npx tsx src/lib/neteaseCookie.test.ts`, `npx tsx src/lib/neteasePlaylist.test.ts`, `npm run build` |
 | QQ Music API, cookies, search, personal playlists, lyrics, audio proxy | `server/qq-music.mjs`, `vite.config.ts`, `local-server.mjs`, `src/lib/qqCookie.ts` | `src/lib/qqCookie.test.ts`, `src/lib/qqMusicLibrary.test.ts` | `npx tsx src/lib/qqCookie.test.ts`, `npx tsx src/lib/qqMusicLibrary.test.ts`, `npm run build` |
 | Update checks and installer download | `server/update-service.mjs`, `src/lib/updateSource.ts`, `desktop/main.js`, `package.json` | `src/lib/updateSource.test.ts` | `npx tsx src/lib/updateSource.test.ts`, `npm run build:electron:dir` |
 | Preset import/export | `src/lib/presetTransfer.ts`, `src/components/UI/UI.tsx` | `src/lib/presetTransfer.test.ts` | `npx tsx src/lib/presetTransfer.test.ts`, `npm run lint` |
-| Theme colors, backdrop lock, and shader palette | `src/lib/themes.ts`, `src/App.tsx`, `src/components/UI/UI.tsx`, `src/components/AudioVisualizer/MapScene.tsx`, `src/components/AudioVisualizer/CustomShaderMaterial.ts` | `src/lib/themes.test.ts`, `src/lib/themeShader.test.ts`, `src/lib/presetTransfer.test.ts` | `npx tsx src/lib/themes.test.ts`, `npx tsx src/lib/themeShader.test.ts`, `npm run build`, manual custom theme color check |
-| Audio analysis, ground effects mixer, and 3D terrain | `src/lib/AudioEngine.ts`, `src/lib/groundEqSettings.ts`, `src/components/AudioVisualizer/MapScene.tsx`, `src/components/AudioVisualizer/CustomShaderMaterial.ts` | `src/lib/audioFrameCache.test.ts`, `src/lib/groundEqSettings.test.ts`, `src/lib/presetTransfer.test.ts` | `npx tsx src/lib/audioFrameCache.test.ts`, `npx tsx src/lib/groundEqSettings.test.ts`, `npx tsx src/lib/presetTransfer.test.ts`, `npm run build`, manual playback in Electron |
+| Theme colors, backdrop lock, and shader palette | `src/lib/themes.ts`, `src/lib/displaySettings.ts`, `src/App.tsx`, `src/components/UI/UI.tsx`, `src/components/AudioVisualizer/MapScene.tsx`, `src/components/AudioVisualizer/CustomShaderMaterial.ts` | `src/lib/themes.test.ts`, `src/lib/displaySettings.test.ts`, `src/lib/themeShader.test.ts`, `src/lib/presetTransfer.test.ts` | `npx tsx src/lib/themes.test.ts`, `npx tsx src/lib/displaySettings.test.ts`, `npx tsx src/lib/themeShader.test.ts`, `npm run build`, manual custom theme color check |
+| Audio analysis, ground effects mixer, terrain density, platter rotation, floating blocks, 3D terrain, factory camera, and 3D lyrics | `src/lib/AudioEngine.ts`, `src/lib/groundEqSettings.ts`, `src/lib/sceneDefaults.ts`, `src/lib/lyricsSettings.ts`, `src/lib/lyricLineWrapping.ts`, `src/lib/terrainResponse.ts`, `src/components/AudioVisualizer/MapScene.tsx`, `src/components/AudioVisualizer/SpatialLyrics3D.tsx`, `src/components/AudioVisualizer/CustomShaderMaterial.ts` | `src/lib/audioFrameCache.test.ts`, `src/lib/groundEqSettings.test.ts`, `src/lib/sceneDefaults.test.ts`, `src/lib/lyricsSettings.test.ts`, `src/lib/lyricLineWrapping.test.ts`, `src/lib/terrainResponse.test.ts`, `src/lib/presetTransfer.test.ts`, `src/lib/scenePlatterRotation.test.ts`, `src/lib/spatialLyricsScene.test.ts` | `npx tsx src/lib/audioFrameCache.test.ts`, `npx tsx src/lib/groundEqSettings.test.ts`, `npx tsx src/lib/sceneDefaults.test.ts`, `npx tsx src/lib/lyricsSettings.test.ts`, `npx tsx src/lib/lyricLineWrapping.test.ts`, `npx tsx src/lib/terrainResponse.test.ts`, `npx tsx src/lib/presetTransfer.test.ts`, `npx tsx src/lib/scenePlatterRotation.test.ts`, `npx tsx src/lib/spatialLyricsScene.test.ts`, `npm run lint`, `npm run build`, manual playback in Electron/browser |
 
 ## End-To-End Flow
 
@@ -55,10 +56,15 @@ Search panel chooses effectiveSearchProvider
 -> Netease: /api/netease/search
 -> QQ: /api/qq/search
 -> UI.loadNeteaseSong(song, queue)
--> Netease: /api/netease/url + /api/netease/lyric + /api/netease/audio
--> QQ: /api/qq/song/url + /api/qq/lyric + /api/qq/audio
+-> read playback quality from src/lib/playbackQuality.ts localStorage settings
+-> Netease: /api/netease/url?br=<bitrate> + /api/netease/lyric + /api/netease/audio?br=<bitrate>
+-> QQ: /api/qq/song/url?quality=<quality> + /api/qq/lyric + /api/qq/audio?quality=<quality>
 -> AudioEngine.loadUrl()
+-> UI stores current lyrics text and passes it to App
+-> UI displaySettings.showLyrics passes lyric visibility to App
 -> MapScene reads AudioEngine.getAudioData()
+-> visualPlatter group auto-rotates terrain/effects while OrbitControls keeps manual camera orbit available
+-> SpatialLyrics3D renders spatial-wall lyrics outside visualPlatter so it behaves like a fixed far screen
 ```
 
 ## Code Map
@@ -68,6 +74,10 @@ Search panel chooses effectiveSearchProvider
 `src/components/UI/UI.tsx`
 
 Main interaction surface. Owns sidebar, search, cloud music panel, account login settings, update checks, playback queue, album-cover rendering, and cloud playback dispatch. The player card polls audio time at a low fixed interval rather than every animation frame to avoid repainting the whole UI at 60fps. The custom theme `showPlayerPanel` flag controls whether the right player card is visible; the card can render an empty state before a track is loaded. The cloud panel expects provider-aware song identities such as `netease:<id>` and `qq:<id>`. Netease keeps daily recommendations; QQ only has liked songs and playlists.
+
+`src/lib/playbackQuality.ts`
+
+Stores global cloud playback quality settings. Defaults preserve the old behavior: QQ `exhigh` / 320k MP3 and Netease `320000`. `UI.loadNeteaseSong()` and last-played preload must use `buildQQPlaybackUrl()` / `buildNeteasePlaybackUrl()` so `/api/qq/*` receives `quality` and `/api/netease/*` receives `br`.
 
 `src/types.ts`
 
@@ -94,6 +104,10 @@ Vite dev server API. Registers `/api/playlists`, `/api/netease/*`, `/api/qq/*`, 
 
 Packaged Electron local Express server. Mirrors the dev server API behavior. If a Netease API fix is made in `vite.config.ts`, apply the same production fix here.
 
+`server/netease-playback.mjs`
+
+Shared Netease playback URL helper for dev and packaged servers. Normalizes `br` to `320000`, `192000`, or `128000`; builds the upstream `/api/song/enhance/player/url` request; and includes bitrate in the playable URL cache key. If changing available Netease qualities, update `src/lib/playbackQuality.ts`, `src/lib/neteasePlayback.test.ts`, `vite.config.ts`, and `local-server.mjs` together.
+
 `src/lib/neteaseCookie.ts`
 
 Netease cookie parsing, storage, and request header helpers.
@@ -109,8 +123,8 @@ Key endpoints:
 - `GET /api/qq/user/playlists`
 - `GET /api/qq/playlist/tracks?id=<id>&limit=all`
 - `GET /api/qq/search?keywords=<keywords>&limit=30`
-- `GET /api/qq/song/url?mid=<mid>&mediaMid=<mediaMid>&quality=exhigh`
-- `GET /api/qq/audio?mid=<mid>&mediaMid=<mediaMid>&quality=exhigh`
+- `GET /api/qq/song/url?mid=<mid>&mediaMid=<mediaMid>&quality=<quality>`
+- `GET /api/qq/audio?mid=<mid>&mediaMid=<mediaMid>&quality=<quality>`
 
 QQ playback defaults to `exhigh` / 320k MP3. Do not default to Hi-Res FLAC; QQ can return a seemingly playable FLAC purl that later 404s during real audio streaming.
 
@@ -126,21 +140,41 @@ Local audio metadata reader for uploaded files and demo audio. It dynamically im
 
 `src/components/AudioVisualizer/MapScene.tsx`
 
-Three.js scene. Reads `AudioEngine.getAudioData()`, applies ground EQ settings, and passes uniforms to the terrain shader.
+Three.js scene. Reads `AudioEngine.getAudioData()`, applies ground EQ settings, and passes uniforms to the terrain shader. It owns a `visualPlatter` group that auto-rotates the terrain, floating kick blocks, meteors, and particles together; do not re-enable `OrbitControls` auto-rotation unless intentionally returning to camera rotation. Keep `OrbitControls` manual rotation enabled so user drag controls camera orbit/pitch, keep platter rotation outside shader-material guards, use the theme/custom-theme rotation speed directly as platter radians-per-second, and convert terrain click points from world space to platter-local coordinates before adding ripples. Fixed far-screen layers such as album-cover backdrop and spatial lyrics must stay outside `visualPlatter`.
+
+`src/components/AudioVisualizer/SpatialLyrics3D.tsx`
+
+3D curved lyric screen used by the `spatial-wall` lyric style. It parses LRC text with `parseLRC()`, tracks time via `engine.audioElement.currentTime`, pulses from `engine.getAudioData()`, draws lyric lines into paired inactive/active canvas textures, and positions the curved mesh as a fixed far-screen layer. If lyrics do not appear, verify the UI lyric text reaches `App.currentLyricsText`, `MapScene.lyricsText` is non-empty, `UI displaySettings.showLyrics` reaches `App.lyricsVisible -> MapScene.lyricsVisible -> SpatialLyrics3D.visible`, and the mesh position projects into the current camera viewport. Keep first-line timing consistent with `LyricsDisplay`: `activeIndex` should stay `-1` until playback reaches the first parsed LRC timestamp minus the shared anticipation window. Keep color semantics consistent with DOM lyrics: canvas text should use `fontColor`, `karaokeColor`, and `glowColor` / theme accent directly, with no extra shader tint over the text, and the lyric shader should stay `toneMapped={false}` so glow colors are not muted by renderer tone mapping. Per-theme `maxCharsPerLine` comes from `lyricsSettings.ts` and is applied through `lyricLineWrapping.ts`; changing it should affect songyancai, dynamic-bounce, and spatial-wall. For `spatial-wall`, do not reintroduce a high fixed canvas font floor or a fixed `ACTIVE_TEXT_MAX_WIDTH`: `activeFontSize` must clamp through the 3D min/max range so the settings slider visibly changes size, and `maxCharsPerLine` must derive the target canvas text width and curved-screen radius. Keep the 2048 canvas texture with a safe text width cap; extreme long lines should wrap at the safe width instead of being clipped or forcing a 4096 texture. Canvas safe-width wrapping must call the measured helper in `lyricLineWrapping.ts` so English words move as whole words; only a single overwide token should fall back to character splitting. Multi-line karaoke uses shader `uLineBounds`; keep each line's Y bounds inside half the line step so one line's active color cannot cover the next wrapped line. Hide/show should fade `uOpacity`; after fade-out, set `mesh.visible=false` rather than unmounting the component so textures and lyric timing are preserved without ongoing draw cost. The 3D-only `spatialOrbitOffset` setting moves the lyric wall around the board center by preserving the default radius and applying a horizontal angle offset; `0` must keep the legacy position.
+
+`src/lib/lyricsSettings.ts`
+
+Stores per-style lyric settings. Each style owns its own font sizes, colors, position/trigger settings, font family, and `maxCharsPerLine`. First-launch defaults are captured from the tuned Electron profile: `spatial-wall` style, custom per-style font sizes/colors, and a spatial wall orbit offset of `-38`. Normalize old flat settings and nested settings through `normalizeLyricsSettings()` so imported presets and existing localStorage receive defaults and clamps.
+
+`src/lib/sceneDefaults.ts`
+
+Factory defaults for global scene rotation and camera state. `App` reads `DEFAULT_CAMERA_POSITION` for the initial React Three Fiber camera and `readGlobalSceneSettingsStorage()` for platter speed. `MapScene` reads `DEFAULT_CAMERA_STATE` when no saved `sonic_camera_state` exists and reset-camera removes the saved key so the next launch also returns to the factory view.
+
+`src/lib/lyricLineWrapping.ts`
+
+Shared text wrapping helper for DOM lyrics and 3D canvas lyrics. It wraps CJK text by character, keeps English words together when possible, chunks overlong words, and clamps line-capacity settings through the constants in `lyricsSettings.ts`. It also exposes measured-width wrapping for the 3D canvas safe-width pass; keep that word-aware so English words are not split into isolated fragments such as `t` / `he`.
 
 `src/components/AudioVisualizer/CustomShaderMaterial.ts`
 
-Terrain shader. Low frequencies change elevation; high frequencies mostly affect glow, sparks, and shimmer.
+Terrain shader. Low frequencies change elevation; high frequencies mostly affect glow, sparks, and shimmer. The instanced terrain vertex transform must include `modelMatrix * instanceMatrix` so parent groups such as `visualPlatter` can rotate the ground; using only `instanceMatrix` makes the terrain ignore group transforms and causes click ripple coordinates to drift from the visible ground.
 
 `src/lib/groundEqSettings.ts`
 
-Ground effects mixer storage, normalization, legacy curve migration, per-band sensitivity scaling, and the global ground motion speed value. The model is 8 independent band values plus `motionSpeed`, not a 16-point curve. The UI exposes the bands as mixer faders for sub-bass, bass, low-mid, mid, high-mid, presence, brilliance, and air, with one horizontal slider controlling how quickly the terrain columns rise and fall.
+Ground effects mixer storage, normalization, legacy curve migration, per-band sensitivity scaling, terrain density, floating kick blocks, and the global ground motion speed value. First-launch defaults are captured from the tuned Electron profile: bands `[50, 50, 50, 50, 50, 50, 50, 48]`, terrain density `46`, floating intensity `55`, min size `9`, max size `26`, and speed `77`. The model is 8 independent band values plus `motionSpeed`, `amplitude`, `terrainDensity`, `floatingBlocksEnabled`, `floatingBlockIntensity`, `floatingBlockMinSize`, `floatingBlockMaxSize`, and `floatingBlockSpeed`, not a 16-point curve. `deriveTerrainGridSettings()` maps density `0..100` to the instanced terrain grid: about `96 x 96`, `160 x 160`, or `224 x 224` blocks while keeping the world footprint stable. The UI exposes the bands as mixer faders for sub-bass, bass, low-mid, mid, high-mid, presence, brilliance, and air, with separate option tabs for ground EQ and floating block controls.
+
+`src/lib/terrainResponse.ts`
+
+Terrain response safety helpers used by `MapScene`. Clamps frame-delta animation blends, kick deformation impulses, and the final low-frequency shader uniforms so transient kick events or delayed frames cannot make the terrain jump violently for a few frames.
 
 ### Theme Colors
 
 `src/lib/themes.ts`
 
-Normalizes built-in and custom theme colors. First launch defaults to the built-in `Nocturnal` theme through `DEFAULT_THEME_ID`. Custom `background` maps to terrain dark colors (`uBaseColor1` / `uBaseColor2`), `fog` is a compatibility field whose product meaning is the rear canvas backdrop color (`uFogColor`), `cool` maps to `uCoolCore`, `warm` maps to `uWarmCore`, and `accent` maps to `uRippleColor`. Legacy custom themes without `fog` default to `fog = background` and `fogLinkedToBackground = true`.
+Normalizes built-in and custom theme colors. First launch defaults to `Minimal Monochrome` through `DEFAULT_THEME_ID`, while the default custom preset mirrors the tuned Electron profile (`#ffffff`, `#98d2bf`, `#ff0000`, `#95abb1`) and remains available as `custom-default`. Custom `background` maps to terrain dark colors (`uBaseColor1` / `uBaseColor2`), `fog` is a compatibility field whose product meaning is the rear canvas backdrop color (`uFogColor`), `cool` maps to `uCoolCore`, `warm` maps to `uWarmCore`, and `accent` maps to `uRippleColor`. Legacy custom themes without `fog` default to `fog = background` and `fogLinkedToBackground = true`.
 
 `src/App.tsx`
 
@@ -148,7 +182,7 @@ Uses `uFogColor` as the app/canvas backdrop color so transparent far-distance te
 
 `src/components/UI/UI.tsx`
 
-Custom theme editor. The ground/backdrop color row has a lock control: when `fogLinkedToBackground` is true, changing terrain dark color immediately syncs the rear backdrop and disables the backdrop picker; when false, the rear backdrop is edited independently.
+Custom theme editor. The ground/backdrop color row has a lock control: when `fogLinkedToBackground` is true, changing terrain dark color immediately syncs the rear backdrop and disables the backdrop picker; when false, the rear backdrop is edited independently. Editing a custom theme immediately activates `CUSTOM_THEME_ID`, so controls such as rotation speed affect the current scene instead of only saving a preset for later.
 
 `src/components/AudioVisualizer/MapScene.tsx`
 
@@ -183,10 +217,19 @@ On this Windows workspace, Electron Builder can fail with `EPERM` while renaming
 | Test file | Covers |
 | --- | --- |
 | `src/lib/neteasePlaylist.test.ts` | Netease playlist `trackIds` completeness, track detail merging, playlist limit parsing |
+| `src/lib/playbackQuality.test.ts` | Playback quality defaults, normalization, localStorage persistence, QQ/Netease playback URL parameters |
+| `src/lib/neteasePlayback.test.ts` | Netease playback bitrate normalization, upstream player URL construction, playable URL cache key bitrate separation |
 | `src/lib/audioFrameCache.test.ts` | AudioEngine single-frame analysis cache and analyser read deduplication |
+| `src/lib/terrainResponse.test.ts` | Terrain response clamps for delayed-frame interpolation, kick impulse bounds, and low-frequency shader uniform limits |
 | `src/lib/themes.test.ts` | Custom theme normalization, legacy rear-backdrop defaults, and independent backdrop color mapping |
+| `src/lib/displaySettings.test.ts` | First-launch display setting defaults such as icon/player visibility and clock color |
 | `src/lib/themeShader.test.ts` | Shader brightness color derives from custom cool color and far-distance backdrop blend derives from `uFogColor` |
-| `src/lib/groundEqSettings.test.ts` | 8-band ground effects defaults, motion speed defaults/clamping, legacy curve migration, per-band scaling |
+| `src/lib/scenePlatterRotation.test.ts` | Platter rotation wiring: OrbitControls does not auto-rotate but manual camera rotation stays enabled, visual group auto-rotates from direct theme speed without waiting for shader material, terrain shader uses `modelMatrix`, custom theme edits activate custom scene speed, click ripples use platter-local coordinates |
+| `src/lib/sceneDefaults.test.ts` | Factory global scene rotation and camera defaults, plus App/MapScene wiring |
+| `src/lib/spatialLyricsScene.test.ts` | 3D lyrics wiring: UI lyrics text reaches App/MapScene, spatial lyrics and cover stay outside the rotating platter, SpatialLyrics3D parses LRC into canvas textures, and spatial-wall capacity/font-size settings drive 3D text width without a fixed 1320px cap |
+| `src/lib/lyricsSettings.test.ts` | Lyric setting defaults, legacy migration, and `maxCharsPerLine` clamps for all lyric styles |
+| `src/lib/lyricLineWrapping.test.ts` | Shared CJK/English lyric line wrapping behavior for the per-style line-capacity slider |
+| `src/lib/groundEqSettings.test.ts` | 8-band ground effects defaults, motion speed defaults/clamping, legacy curve migration, terrain density, floating block settings, per-band scaling |
 | `src/lib/neteaseCookie.test.ts` | Netease cookie cleaning, storage, request headers |
 | `src/lib/qqCookie.test.ts` | QQ cookie cleaning, login state, storage, request headers |
 | `src/lib/qqMusicLibrary.test.ts` | QQ playlist detection, playlist filtering, song mapping, track limit parsing, quality candidates |
@@ -213,6 +256,15 @@ On this Windows workspace, Electron Builder can fail with `EPERM` while renaming
 3. Update `src/components/UI/UI.tsx` if the panel or search provider changes.
 4. Run `npx tsx src/lib/qqMusicLibrary.test.ts`, `npx tsx src/lib/qqCookie.test.ts`, `npm run lint`, and `npm run build`.
 
+### Change Playback Quality
+
+1. Update `src/lib/playbackQuality.ts` for available UI options, defaults, storage, and URL builders.
+2. For QQ quality behavior, update `server/qq-music.mjs` and `src/lib/qqMusicLibrary.test.ts`.
+3. For Netease bitrate behavior, update `server/netease-playback.mjs`, `vite.config.ts`, and `local-server.mjs`; keep the cache key separated by bitrate.
+4. Update `src/components/UI/UI.tsx` if the settings panel or playback dispatch changes.
+5. Run `npx tsx src/lib/playbackQuality.test.ts`, `npx tsx src/lib/neteasePlayback.test.ts`, `npx tsx src/lib/qqMusicLibrary.test.ts`, `npm run lint`, and `npm run build`.
+6. For real acceptance, switch QQ and Netease quality settings, replay the same cloud song, and verify the request URL includes the selected `quality` or `br`.
+
 ### Change Account Login
 
 1. Check `desktop/main.js` login windows and cookie polling.
@@ -223,20 +275,55 @@ On this Windows workspace, Electron Builder can fail with `EPERM` while renaming
 
 ### Change Ground Effects Mixer
 
-1. Update `src/lib/groundEqSettings.ts` for data model changes.
+1. Update `src/lib/groundEqSettings.ts` for data model changes, including `terrainDensity`, floating block settings, and `deriveTerrainGridSettings()` if terrain block count or sizing changes.
 2. Update `src/components/UI/UI.tsx` for the mixer UI.
-3. Update `src/components/AudioVisualizer/MapScene.tsx` for band-to-shader mapping.
+3. Update `src/components/AudioVisualizer/MapScene.tsx` for band-to-shader mapping or terrain instance sizing.
 4. If the stored model changes, update preset import/export normalization in `src/lib/presetTransfer.ts` tests.
 5. Keep exactly 8 direct frequency controls unless `AudioEngine` and `CustomShaderMaterial` add more direct frequency uniforms. Global `motionSpeed` controls terrain response smoothing only.
-6. Run `npx tsx src/lib/groundEqSettings.test.ts`, `npx tsx src/lib/presetTransfer.test.ts`, `npm run lint`, and `npm run build`.
+6. If changing frame smoothing, kick deformation, or final shader uniform bounds, update `src/lib/terrainResponse.ts` and `src/lib/terrainResponse.test.ts`.
+7. If changing density, verify low density uses larger/fewer blocks, high density uses smaller/more blocks, and the terrain footprint does not visibly shrink or expand.
+8. If changing floating blocks, verify the option tab appears directly after Meteor, enabled blocks hover above the terrain, min/max size and speed controls change the kick scaling visibly, disabled blocks hide, and meteors/click ripples still work.
+9. Run `npx tsx src/lib/groundEqSettings.test.ts`, `npx tsx src/lib/terrainResponse.test.ts`, `npx tsx src/lib/presetTransfer.test.ts`, `npm run lint`, and `npm run build`.
+
+### Change Scene Rotation
+
+1. Update `src/components/AudioVisualizer/MapScene.tsx`.
+2. If UI rotation controls change, check `src/components/UI/UI.tsx` and `src/App.tsx` so custom theme speed actually becomes `MapScene.rotationSpeed`.
+3. Keep terrain, floating blocks, meteors, and particles inside the same `visualPlatter` group so they rotate together.
+4. Keep `OrbitControls` manual rotation enabled and auto-rotation disabled; automatic rotation should update platter yaw, not camera position.
+5. Use the theme/custom-theme rotation speed directly for platter yaw; `0` means stopped.
+6. Keep terrain shader vertex transforms on `modelMatrix * instanceMatrix`; otherwise group rotation will not affect the ground.
+7. Keep platter rotation before material/shader early returns so the board can rotate even while shader refs initialize.
+8. If pointer interaction changes, keep ripple coordinates in platter-local space.
+9. Run `npx tsx src/lib/scenePlatterRotation.test.ts`, `npx tsx src/lib/groundEqSettings.test.ts`, `npx tsx src/lib/terrainResponse.test.ts`, `npm run lint`, and `npm run build`.
+10. In Electron, verify custom theme rotation speed changes platter speed immediately, automatic platter rotation, manual camera orbit/pitch with horizontal and vertical drag, correct ripple locations, and no obvious frame-rate drop.
+
+### Change 3D Lyrics
+
+1. Update `src/lib/lyricsSettings.ts` if adding or changing lyric style data.
+2. Update shared wrapping in `src/lib/lyricLineWrapping.ts` if changing per-line capacity behavior.
+3. Update settings UI in `src/components/UI/UI.tsx`.
+4. Keep current lyric text flowing from `UI` to `App` to `MapScene`; do not read lyrics from `currentSong` unless that model explicitly stores lyrics.
+5. Keep `SpatialLyrics3D` outside `visualPlatter` in `MapScene` so the terrain rotates but the lyric wall behaves like a fixed far screen.
+6. Verify LRC parsing with `parseLRC()`, canvas texture creation in `SpatialLyrics3D`, first-line timing before the first timestamp, the lyric visibility toggle path for all styles, per-line capacity and font-size response in all three styles, spatial-wall width changes at capacities such as 16/24/32/48, spatial-wall orbit offsets at -180/0/180 degrees, and a real browser/Electron playback path with the changed style selected.
+7. Run `npx tsx src/lib/lyricsSettings.test.ts`, `npx tsx src/lib/lyricLineWrapping.test.ts`, `npx tsx src/lib/spatialLyricsScene.test.ts`, `npx tsx src/lib/scenePlatterRotation.test.ts`, `npm run lint`, and `npm run build`.
 
 ## Local Verification Commands
 
 ```powershell
 npx tsx src/lib/neteasePlaylist.test.ts
+npx tsx src/lib/playbackQuality.test.ts
+npx tsx src/lib/neteasePlayback.test.ts
 npx tsx src/lib/audioFrameCache.test.ts
+npx tsx src/lib/terrainResponse.test.ts
 npx tsx src/lib/themes.test.ts
+npx tsx src/lib/displaySettings.test.ts
 npx tsx src/lib/themeShader.test.ts
+npx tsx src/lib/lyricsSettings.test.ts
+npx tsx src/lib/lyricLineWrapping.test.ts
+npx tsx src/lib/scenePlatterRotation.test.ts
+npx tsx src/lib/sceneDefaults.test.ts
+npx tsx src/lib/spatialLyricsScene.test.ts
 npx tsx src/lib/groundEqSettings.test.ts
 npx tsx src/lib/neteaseCookie.test.ts
 npx tsx src/lib/qqCookie.test.ts
@@ -254,9 +341,12 @@ npm run build:electron:dir
 
 ```powershell
 rg -n "collectNeteasePlaylistTrackIds|fetchNeteaseSongDetails|getPlaylistPlayableSongs|trackIds" server vite.config.ts local-server.mjs src
-rg -n "groundEqSettings|applyGroundEqBandValue|GroundEqPanel|uSubBass|uAir" src
+rg -n "groundEqSettings|applyGroundEqBandValue|terrainResponse|GroundEqPanel|uSubBass|uAir" src
+rg -n "visualPlatterRef|platterRotationRef|scenePlatterRotation|enableRotate" src
+rg -n "spatial-wall|SpatialLyrics3D|currentLyricsText|parseLRC|maxCharsPerLine|wrapLyricTextLines" src
 rg -n "uCoolCore|uWarmCore|uRippleColor|uFogColor|fogLinkedToBackground|brightCool|createCustomThemeColors" src
 rg -n "effectiveSearchProvider|searchNetease|loadNeteaseSong|songIdentity|/api/netease|/api/qq" src vite.config.ts local-server.mjs server
+rg -n "playbackQuality|quality=|br=|neteasePlayableUrlCacheKey|buildNeteasePlayerUrl" src server vite.config.ts local-server.mjs
 rg -n "handleQQUserPlaylists|handleQQPlaylistTracks|normalizeQQPlaylistTrackLimit|mapQQPlaylist" server src
 rg -n "sonicDesktop|openNeteaseLogin|openQQLogin|Cookie" desktop src server
 rg -n "wallpaper|capture|build:go|build:wallpaper|sonicserver|cmd/sonic-topography" .

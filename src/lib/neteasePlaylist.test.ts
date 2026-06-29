@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   collectNeteasePlaylistTrackIds,
+  mapNeteasePlaylistSummary,
   mapNeteaseSong,
   mergeNeteasePlaylistTrackDetails,
   normalizeNeteasePlaylistLimit,
@@ -31,6 +32,18 @@ const merged = mergeNeteasePlaylistTrackDetails(partialTracks, detailTracks, ids
 assert.equal(merged.length, 70);
 assert.equal(mapNeteaseSong(merged[69]).name, 'Track 70');
 assert.equal(mapNeteaseSong(merged[69]).cover, 'https://example.test/cover-70.jpg');
+
+const playlistSummary = mapNeteasePlaylistSummary({
+  id: 123,
+  name: 'Cover Playlist',
+  trackCount: 12,
+  coverImgUrl: 'https://example.test/playlist-cover.jpg',
+});
+assert.equal(playlistSummary.provider, 'netease');
+assert.equal(playlistSummary.id, 123);
+assert.equal(playlistSummary.name, 'Cover Playlist');
+assert.equal(playlistSummary.trackCount, 12);
+assert.equal(playlistSummary.cover, 'https://example.test/playlist-cover.jpg');
 
 assert.equal(normalizeNeteasePlaylistLimit('all'), 2000);
 assert.equal(normalizeNeteasePlaylistLimit('70'), 70);

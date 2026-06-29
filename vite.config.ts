@@ -1,4 +1,4 @@
-﻿import tailwindcss from '@tailwindcss/vite';
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import fs from 'node:fs/promises';
 import path from 'path';
@@ -6,10 +6,16 @@ import {defineConfig} from 'vite';
 import { NETEASE_COOKIE_HEADER, normalizeNeteaseCookie } from './src/lib/neteaseCookie';
 import { registerQQMusicViteMiddlewares } from './server/qq-music.mjs';
 import {
+  buildNeteasePlayerUrl,
+  neteasePlayableUrlCacheKey,
+  normalizeNeteaseBitrate,
+} from './server/netease-playback.mjs';
+import {
   NETEASE_MAX_PLAYLISTS,
   NETEASE_MAX_PLAYLIST_TRACK_LIMIT,
   NETEASE_PLAYLIST_PAGE_LIMIT,
   collectNeteasePlaylistTrackIds,
+  mapNeteasePlaylistSummary,
   mapNeteaseSong,
   mergeNeteasePlaylistTrackDetails,
   normalizeNeteasePlaylistLimit,
@@ -96,13 +102,14 @@ async function fetchJsonWithRetry(url: string | URL, options: RequestInit = {}, 
   return lastData || {};
 }
 
-async function getNeteasePlayableUrlWithCookie(id: string, cookie: string) {
+async function getNeteasePlayableUrlWithCookie(id: string, cookie: string, bitrate = '320000') {
   const normalizedCookie = normalizeNeteaseCookie(cookie);
-  const cacheKey = `${id}::${normalizedCookie}`;
+  const normalizedBitrate = normalizeNeteaseBitrate(bitrate);
+  const cacheKey = neteasePlayableUrlCacheKey(id, normalizedCookie, normalizedBitrate);
   const cached = playableUrlCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.url;
 
-  const url = `https://music.163.com/api/song/enhance/player/url?id=${encodeURIComponent(id)}&ids=%5B${encodeURIComponent(id)}%5D&br=320000`;
+  const url = buildNeteasePlayerUrl(id, normalizedBitrate);
   const data = await fetchJsonWithRetry(url, { headers: createNeteaseHeaders(normalizedCookie) });
   const playableUrl = data?.data?.[0]?.url || null;
   playableUrlCache.set(cacheKey, { url: playableUrl, expiresAt: Date.now() + playableUrlCacheTtl });
@@ -265,11 +272,7 @@ async function getUserPlaylists(cookie: string) {
     if (page.length < NETEASE_PLAYLIST_PAGE_LIMIT || playlists.length >= total) break;
   }
 
-  const mappedPlaylists = playlists.map((playlist: any) => ({
-    id: playlist.id,
-    name: playlist.name,
-    trackCount: playlist.trackCount || 0,
-  }));
+  const mappedPlaylists = playlists.map(mapNeteasePlaylistSummary);
 
   return { valid: true, playlists: mappedPlaylists };
 }
@@ -530,6 +533,7 @@ function neteaseApiPlugin() {
         try {
           const requestUrl = new URL(req.url || '', 'http://localhost');
           const id = requestUrl.searchParams.get('id');
+          const bitrate = requestUrl.searchParams.get('br') || '';
           const cookie = readNeteaseCookie(req);
 
           if (!id) {
@@ -537,7 +541,7 @@ function neteaseApiPlugin() {
             return;
           }
 
-          writeJson(res, 200, { url: await getNeteasePlayableUrlWithCookie(id, cookie) });
+          writeJson(res, 200, { url: await getNeteasePlayableUrlWithCookie(id, cookie, bitrate) });
         } catch (error) {
           writeJson(res, 500, { error: 'Netease url failed' });
         }
@@ -547,6 +551,7 @@ function neteaseApiPlugin() {
         try {
           const requestUrl = new URL(req.url || '', 'http://localhost');
           const id = requestUrl.searchParams.get('id');
+          const bitrate = requestUrl.searchParams.get('br') || '';
           const cookie = readNeteaseCookie(req);
 
           if (!id) {
@@ -554,7 +559,7 @@ function neteaseApiPlugin() {
             return;
           }
 
-          const playableUrl = await getNeteasePlayableUrlWithCookie(id, cookie);
+          const playableUrl = await getNeteasePlayableUrlWithCookie(id, cookie, bitrate);
           if (!playableUrl) {
             writeJson(res, 404, { error: 'No playable url for this song' });
             return;
@@ -574,13 +579,27 @@ function neteaseApiPlugin() {
           if (audioResponse.body) {
             const reader = audioResponse.body.getReader();
             const pump = async () => {
-              const { done, value } = await reader.read();
-              if (done) {
-                res.end();
-                return;
+              try {
+                if (req.destroyed || res.destroyed) {
+                  reader.cancel().catch(() => {});
+                  return;
+                }
+                const { done, value } = await reader.read();
+                if (done) {
+                  if (!res.destroyed) res.end();
+                  return;
+                }
+                res.write(Buffer.from(value), (err) => {
+                  if (err) reader.cancel().catch(() => {});
+                  else pump();
+                });
+              } catch (err) {
+                if (!res.destroyed) res.end();
               }
-              res.write(Buffer.from(value), pump);
             };
+            req.on('close', () => {
+              reader.cancel().catch(() => {});
+            });
             pump();
           } else {
             res.end();

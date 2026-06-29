@@ -186,8 +186,12 @@ function mapQQArtists(raw) {
     .filter((artist) => artist.name);
 }
 
-function qqAlbumCover(albumMid, size = 300) {
+function rawQQAlbumCover(albumMid, size = 300) {
   return albumMid ? `https://y.qq.com/music/photo_new/T002R${size}x${size}M000${albumMid}.jpg?max_age=2592000` : '';
+}
+
+function qqAlbumCover(albumMid, size = 300) {
+  return albumMid ? `/api/qq/cover?id=${albumMid}&size=${size}` : '';
 }
 
 function mapQQSmartSong(item) {
@@ -643,7 +647,7 @@ function audioContentType(audioUrl, upstreamType) {
   return upstreamType || 'audio/mpeg';
 }
 
-async function streamAudio(res, audioUrl, range) {
+async function streamAudio(req, res, audioUrl, range) {
   const headers = { 'User-Agent': UA, Referer: 'https://y.qq.com/' };
   if (range) headers.Range = range;
   const audioResponse = await fetch(audioUrl, { headers });
@@ -659,13 +663,27 @@ async function streamAudio(res, audioUrl, range) {
   }
   const reader = audioResponse.body.getReader();
   const pump = async () => {
-    const { done, value } = await reader.read();
-    if (done) {
-      res.end();
-      return;
+    try {
+      if (req.destroyed || res.destroyed) {
+        reader.cancel().catch(() => {});
+        return;
+      }
+      const { done, value } = await reader.read();
+      if (done) {
+        if (!res.destroyed) res.end();
+        return;
+      }
+      res.write(Buffer.from(value), (err) => {
+        if (err) reader.cancel().catch(() => {});
+        else pump();
+      });
+    } catch (err) {
+      if (!res.destroyed) res.end();
     }
-    res.write(Buffer.from(value), pump);
   };
+  req.on('close', () => {
+    reader.cancel().catch(() => {});
+  });
   pump();
 }
 
@@ -750,6 +768,26 @@ async function handleRoute(req, res, parsedUrl, writeJson = writeJsonResponse) {
       return true;
     }
 
+    if (pathname === '/api/qq/cover') {
+      const albumMid = parsedUrl.searchParams.get('id') || '';
+      const size = parsedUrl.searchParams.get('size') || '300';
+      if (!albumMid) {
+        writeJson(res, 400, { error: 'Missing album id' });
+        return true;
+      }
+      const targetUrl = rawQQAlbumCover(albumMid, size);
+      const fetchRes = await fetch(targetUrl, {
+        headers: { 'Referer': 'https://y.qq.com/' }
+      });
+      if (!fetchRes.ok) throw new Error('Proxy cover failed');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Content-Type', fetchRes.headers.get('content-type') || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=2592000');
+      const buffer = await fetchRes.arrayBuffer();
+      res.end(Buffer.from(buffer));
+      return true;
+    }
+
     if (pathname === '/api/qq/audio') {
       const info = await handleQQSongUrl(
         parsedUrl.searchParams.get('mid') || parsedUrl.searchParams.get('id') || '',
@@ -761,7 +799,7 @@ async function handleRoute(req, res, parsedUrl, writeJson = writeJsonResponse) {
         writeJson(res, 404, { error: 'No playable QQ url for this song', info });
         return true;
       }
-      await streamAudio(res, info.url, req.headers?.range);
+      await streamAudio(req, res, info.url, req.headers?.range);
       return true;
     }
   } catch (error) {

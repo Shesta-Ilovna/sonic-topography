@@ -17,7 +17,7 @@ import { GROUND_EQ_STORAGE_KEY, normalizeGroundEqSettings, type StoredGroundEqSe
 import { TRIGGER_SETTINGS_STORAGE_KEY, normalizeTriggerConfig, type StoredTriggerSettings } from './triggerSettings';
 import { NETEASE_COOKIE_STORAGE_KEY, normalizeNeteaseCookie } from './neteaseCookie';
 import { readDisplaySettingsStorage, writeDisplaySettingsStorage, type DisplaySettings } from './displaySettings';
-import { readLyricsSettingsStorage, writeLyricsSettingsStorage, type LyricsSettings } from './lyricsSettings';
+import { normalizeLyricsSettings, readLyricsSettingsStorage, writeLyricsSettingsStorage, type LyricsSettings } from './lyricsSettings';
 import { QQ_COOKIE_STORAGE_KEY, normalizeQQCookie } from './qqCookie';
 export const PRESET_TRANSFER_VERSION = 1;
 export const PLAYLIST_STORAGE_KEY = 'sonic-topography-playlists-v1';
@@ -162,7 +162,7 @@ export function normalizePresetTransferPackage(value: unknown): PresetTransferPa
     normalized.data.displaySettings = input.data.displaySettings;
   }
   if (input.data.lyricsSettings) {
-    normalized.data.lyricsSettings = input.data.lyricsSettings;
+    normalized.data.lyricsSettings = normalizeLyricsSettings(input.data.lyricsSettings);
   }
 
   return normalized;

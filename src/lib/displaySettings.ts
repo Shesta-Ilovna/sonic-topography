@@ -7,12 +7,20 @@ export interface ClockSettings {
   opacity: number;
 }
 
+export interface ShortcutSettings {
+  playPause: string;
+  prevSong: string;
+  nextSong: string;
+}
+
 export interface DisplaySettings {
   showLeftIcon: boolean;
   showRightIcon: boolean;
   showBottomPlayer: boolean;
   showLyrics: boolean;
+  showCover: boolean;
   clock: ClockSettings;
+  shortcuts: ShortcutSettings;
 }
 
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
@@ -20,13 +28,19 @@ export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   showRightIcon: true,
   showBottomPlayer: true,
   showLyrics: true,
+  showCover: true,
   clock: {
     visible: false,
     position: 'top-center',
     size: 200,
-    color: '#ffffff',
+    color: '#f50000',
     followThemeColor: true,
     opacity: 0.7,
+  },
+  shortcuts: {
+    playPause: 'Space',
+    prevSong: 'Ctrl+ArrowLeft',
+    nextSong: 'Ctrl+ArrowRight',
   }
 };
 
@@ -44,6 +58,10 @@ export function readDisplaySettingsStorage(): DisplaySettings {
         clock: {
           ...DEFAULT_DISPLAY_SETTINGS.clock,
           ...(parsed.clock || {})
+        },
+        shortcuts: {
+          ...DEFAULT_DISPLAY_SETTINGS.shortcuts,
+          ...(parsed.shortcuts || {})
         }
       };
     }

@@ -5,6 +5,7 @@ export type TriggerPreset = 'Auto Beat' | 'Advanced';
 export class TriggerConfig {
   public enabled: boolean = false;
   public mode: TriggerPreset = 'Auto Beat';
+  public autoTrack: boolean = true; // Add auto-track feature
   
   // Advanced parameters
   public freqIndex: number = -1;
@@ -28,18 +29,33 @@ export class TriggerConfig {
   public smoothedFlux: number = 0;
   public prevSmoothedFlux: number = 0;
 
-  constructor(public action: 'Pulse' | 'Meteor') {
+  constructor(public action: 'Pulse' | 'Meteor' | 'Snare') {
       this.enabled = true; // Both Pulse and Meteor enabled by default
       this.mode = 'Auto Beat';
       this.bandStart = 0;
       this.bandEnd = 16;
-      if (action === 'Meteor') {
+      
+      if (action === 'Pulse') {
+          // Focus exclusively on the true 'Kick' punch range (approx 40Hz - 120Hz)
+          // Bin 1 (43-86Hz) and Bin 2 (86-129Hz). This avoids low-mid vocals.
+          this.bandStart = 1;
+          this.bandEnd = 2;
+          this.sensitivity = 0.85; // Highly sensitive to ensure the white line stays low
+          this.cooldown = 15; // Prevent rapid double-firing (spasms)
+      } else if (action === 'Meteor') {
           // meteor default params matching user request
           this.bandStart = 159;
           this.bandEnd = 174;
           this.sensitivity = 0.45; 
           this.cooldown = 241; 
           this.pulseStrength = 0.50;
+      } else if (action === 'Snare') {
+          // High-mid and presence frequencies for claps/snares (approx 2kHz - 5kHz)
+          this.bandStart = 47;
+          this.bandEnd = 120;
+          this.sensitivity = 0.6; // Increased to trigger more easily
+          this.cooldown = 30;
+          this.pulseStrength = 0.3;
       }
   }
 
@@ -56,6 +72,8 @@ export class AudioEngine {
   private analyser: AnalyserNode | null = null;
   private source: MediaElementAudioSourceNode | null = null;
   private fadeNode: GainNode | null = null;
+  private userVolumeNode: GainNode | null = null;
+  private userVolumeValue: number = 1;
   public audioElement: HTMLAudioElement;
 
   private dataArray: Uint8Array = new Uint8Array(512);
@@ -116,17 +134,35 @@ export class AudioEngine {
     this.analyser = this.audioCtx.createAnalyser();
     this.analyser.fftSize = 1024; // 512 bins
     this.analyser.smoothingTimeConstant = 0.8;
+    this.analyser.minDecibels = -75; // Act as a noise gate to keep silence at exactly 0
     
     this.fadeNode = this.audioCtx.createGain();
     this.fadeNode.gain.value = 0.001; // Start muted
     
+    this.userVolumeNode = this.audioCtx.createGain();
+    this.userVolumeNode.gain.value = this.userVolumeValue;
+    
     this.source = this.audioCtx.createMediaElementSource(this.audioElement);
     this.source.connect(this.fadeNode);
-    this.fadeNode.connect(this.audioCtx.destination);
-    // Also feed to analyser
+    
+    // Also feed to analyser (before user volume)
     this.fadeNode.connect(this.analyser);
     
+    this.fadeNode.connect(this.userVolumeNode);
+    this.userVolumeNode.connect(this.audioCtx.destination);
+    
     this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+  }
+
+  public setVolume(val: number) {
+    this.userVolumeValue = val;
+    if (this.userVolumeNode && this.audioCtx) {
+      this.userVolumeNode.gain.setTargetAtTime(val, this.audioCtx.currentTime, 0.05);
+    }
+  }
+
+  public getVolume(): number {
+    return this.userVolumeValue;
   }
 
   public loadFile(file: File) {
@@ -200,8 +236,73 @@ export class AudioEngine {
 
   public pulseTrigger = new TriggerConfig('Pulse');
   public meteorTrigger = new TriggerConfig('Meteor');
+  public snareTrigger = new TriggerConfig('Snare');
   
-  public onFreqTrigger?: (strength: number, type: 'Kick' | 'Snare' | 'Advanced', action: 'Pulse' | 'Meteor') => void;
+  public onFreqTrigger?: (strength: number, type: 'Kick' | 'Snare' | 'Advanced', action: 'Pulse' | 'Meteor' | 'Snare') => void;
+  public onAutoTrackUpdate?: (start: number, end: number, sensitivity: number) => void;
+
+  private pulseTrackerData: { time: number, data: number[] }[] = [];
+  private lastAutoTrackTime: number = 0;
+
+  private trackAutoPulse(rawData: Uint8Array, now: number) {
+      if (!this.pulseTrigger.autoTrack) return;
+      
+      this.pulseTrackerData.push({ time: now, data: Array.from(rawData.slice(0, 30)) });
+      
+      // Remove frames older than 3 seconds to guarantee strict 3000ms window regardless of Hz
+      while (this.pulseTrackerData.length > 0 && now - this.pulseTrackerData[0].time > 3000) {
+          this.pulseTrackerData.shift();
+      }
+
+      if (now - this.lastAutoTrackTime > 1000) { // Evaluate every 1 second
+          this.lastAutoTrackTime = now;
+          this.evaluateAutoPulse();
+      }
+  }
+
+  private evaluateAutoPulse() {
+      const frames = this.pulseTrackerData;
+      if (frames.length < 30) return;
+
+      const numFrames = frames.length;
+      const numBins = frames[0].data.length;
+      const binDiffs = Array.from({ length: numBins }, () => [] as number[]);
+      
+      for (let f = 1; f < numFrames; f++) {
+          for (let b = 0; b < numBins; b++) {
+              const val = frames[f].data[b] / 255.0;
+              const prevVal = frames[f-1].data[b] / 255.0;
+              const diff = val - prevVal;
+              if (diff > 0.01) binDiffs[b].push(diff);
+          }
+      }
+
+      const results = [];
+      for (let b = 0; b < numBins; b++) {
+          const maxDiff = binDiffs[b].length > 0 ? Math.max(...binDiffs[b]) : 0;
+          results.push({ bin: b, maxDiff });
+      }
+
+      results.sort((a, b) => b.maxDiff - a.maxDiff);
+      const topBinDiff = results[0].maxDiff;
+      
+      // Intro / Silence / Mud Protection:
+      // If the top transient is very weak, there's no punchy kick happening in the last 3s.
+      // Ignore this window and keep previous settings to prevent locking onto mud.
+      if (topBinDiff < 0.15) return; 
+
+      const bestBins = results.slice(0, 2).map(r => r.bin);
+      const start = Math.min(...bestBins);
+      const end = Math.max(...bestBins);
+
+      this.pulseTrigger.bandStart = start;
+      this.pulseTrigger.bandEnd = end;
+      this.pulseTrigger.sensitivity = 0.85; // Optimal for isolated band
+      
+      if (this.onAutoTrackUpdate) {
+          this.onAutoTrackUpdate(start, end, 0.85);
+      }
+  }
 
   private evaluateTrigger(config: TriggerConfig, fluxScore: number) {
       if (!config.enabled || !this.isPlaying) return;
@@ -252,19 +353,20 @@ export class AudioEngine {
          const fluxStdDev = Math.sqrt(fluxVariance);
 
          const thresholdMultiplier = Math.max(0.1, 5.0 - config.sensitivity * 4.0);
-         const adaptiveThreshold = Math.max(0.05, avgFlux + fluxStdDev * thresholdMultiplier);
+         const adaptiveThreshold = Math.max(0.01, avgFlux + fluxStdDev * thresholdMultiplier);
 
          const isPeak = config.prevSmoothedFlux > adaptiveThreshold && config.prevSmoothedFlux >= config.smoothedFlux;
 
          if (config.beatHold > 0) {
             config.beatHold--;
          } else if (isPeak && config.prevSmoothedFlux - config.smoothedFlux > 0.0001) {
-            if (this.onFreqTrigger) this.onFreqTrigger(config.prevSmoothedFlux * 3.0 * config.pulseStrength, 'Kick', config.action);
+            // Multiply by 30 (instead of 3) to compensate for the flux normalization by pulseBins, so it passes MapScene's 0.1 strength threshold
+            if (this.onFreqTrigger) this.onFreqTrigger(config.prevSmoothedFlux * 30.0 * config.pulseStrength, 'Kick', config.action);
             config.beatHold = config.cooldown;
          }
 
-         config.lastEvalEnergy = config.smoothedFlux * 2.0;
-         config.lastEvalThresh = adaptiveThreshold * 2.0;
+         config.lastEvalEnergy = config.smoothedFlux * 10.0;
+         config.lastEvalThresh = adaptiveThreshold * 10.0;
          config.prevSmoothedFlux = config.smoothedFlux;
       }
   }
@@ -303,6 +405,11 @@ export class AudioEngine {
 
       let fluxPulse = 0;
       let fluxMeteor = 0;
+      let fluxSnare = 0;
+      const now = performance.now();
+      if (this.isPlaying) {
+          this.trackAutoPulse(this.dataArray, now);
+      }
 
       for (let i = 0; i < binCount; i++) {
           const val = this.dataArray[i] / 255.0; // normalize 0-1
@@ -317,13 +424,19 @@ export class AudioEngine {
           // Flux for pulse
           if (i >= this.pulseTrigger.bandStart && i <= this.pulseTrigger.bandEnd) {
              const diff = val - prevVal;
-             if (diff > 0) fluxPulse += diff;
+             if (diff > 0.01) fluxPulse += diff; // 1% noise gate
+          }
+
+          // Flux for snare
+          if (i >= this.snareTrigger.bandStart && i <= this.snareTrigger.bandEnd) {
+             const diff = val - prevVal;
+             if (diff > 0.01) fluxSnare += diff;
           }
 
           // Flux for meteor
           if (i >= this.meteorTrigger.bandStart && i <= this.meteorTrigger.bandEnd) {
              const diff = val - prevVal;
-             if (diff > 0) fluxMeteor += diff;
+             if (diff > 0.01) fluxMeteor += diff;
           }
 
           this.prevData[i] = val;
@@ -338,8 +451,17 @@ export class AudioEngine {
           else if (i <= 372) airSum += val;
       }
       
-      this.evaluateTrigger(this.pulseTrigger, fluxPulse);
-      this.evaluateTrigger(this.meteorTrigger, fluxMeteor);
+      // Normalize flux scores by the number of bins in each band.
+      // This ensures the value is an average flux per bin (0.0 to 1.0),
+      // making the threshold math work perfectly regardless of band size.
+      const pulseBins = Math.max(1, this.pulseTrigger.bandEnd - this.pulseTrigger.bandStart + 1);
+      this.evaluateTrigger(this.pulseTrigger, fluxPulse / pulseBins);
+      
+      const snareBins = Math.max(1, this.snareTrigger.bandEnd - this.snareTrigger.bandStart + 1);
+      this.evaluateTrigger(this.snareTrigger, fluxSnare / snareBins);
+      
+      const meteorBins = Math.max(1, this.meteorTrigger.bandEnd - this.meteorTrigger.bandStart + 1);
+      this.evaluateTrigger(this.meteorTrigger, fluxMeteor / meteorBins);
     } else {
       // When playback stops or switches, decay raw and smoothed values instead of snapping to zero.
       for (let i = 0; i < binCount; i++) {

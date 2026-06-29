@@ -6,6 +6,7 @@ export interface LastPlayedState {
   /** 'cloud' = netease/qq song, 'demo' = demo track */
   type: 'cloud' | 'demo';
   song?: NeteaseSong;      // only for type='cloud'
+  queue?: NeteaseSong[];   // the current playlist queue context
   trackName: string;
   cover: string;
   /** Playback position in seconds (best-effort, saved on pause/unload) */

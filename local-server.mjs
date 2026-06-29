@@ -4,10 +4,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerQQMusicExpressRoutes } from './server/qq-music.mjs';
 import {
+  buildNeteasePlayerUrl,
+  neteasePlayableUrlCacheKey,
+  normalizeNeteaseBitrate,
+} from './server/netease-playback.mjs';
+import {
   NETEASE_MAX_PLAYLISTS,
   NETEASE_MAX_PLAYLIST_TRACK_LIMIT,
   NETEASE_PLAYLIST_PAGE_LIMIT,
   collectNeteasePlaylistTrackIds,
+  mapNeteasePlaylistSummary,
   mapNeteaseSong,
   mergeNeteasePlaylistTrackDetails,
   normalizeNeteasePlaylistLimit,
@@ -74,13 +80,14 @@ async function fetchJsonWithRetry(url, options = {}, retries = 2) {
 }
 
 
-async function getNeteasePlayableUrl(id, cookie = '') {
+async function getNeteasePlayableUrl(id, cookie = '', bitrate = '320000') {
   const normalizedCookie = normalizeNeteaseCookie(cookie);
-  const cacheKey = `${id}::${normalizedCookie}`;
+  const normalizedBitrate = normalizeNeteaseBitrate(bitrate);
+  const cacheKey = neteasePlayableUrlCacheKey(id, normalizedCookie, normalizedBitrate);
   const cached = playableUrlCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.url;
 
-  const url = `https://music.163.com/api/song/enhance/player/url?id=${encodeURIComponent(id)}&ids=%5B${encodeURIComponent(id)}%5D&br=320000`;
+  const url = buildNeteasePlayerUrl(id, normalizedBitrate);
   const data = await fetchJsonWithRetry(url, { headers: createNeteaseHeaders(normalizedCookie) });
   const playableUrl = data?.data?.[0]?.url || null;
   playableUrlCache.set(cacheKey, { url: playableUrl, expiresAt: Date.now() + playableUrlCacheTtl });
@@ -227,11 +234,7 @@ async function getUserPlaylists(cookie) {
     if (page.length < NETEASE_PLAYLIST_PAGE_LIMIT || playlists.length >= total) break;
   }
 
-  const mappedPlaylists = playlists.map((playlist) => ({
-    id: playlist.id,
-    name: playlist.name,
-    trackCount: playlist.trackCount || 0,
-  }));
+  const mappedPlaylists = playlists.map(mapNeteasePlaylistSummary);
 
   return { valid: true, playlists: mappedPlaylists };
 }
@@ -501,13 +504,14 @@ app.get('/api/netease/lyric', async (req, res) => {
 app.get('/api/netease/url', async (req, res) => {
   try {
     const id = String(req.query.id || '');
+    const bitrate = String(req.query.br || '');
     const cookie = readNeteaseCookie(req);
     if (!id) {
       res.status(400).json({ error: 'Missing id' });
       return;
     }
 
-    res.json({ url: await getNeteasePlayableUrl(id, cookie) });
+    res.json({ url: await getNeteasePlayableUrl(id, cookie, bitrate) });
   } catch (error) {
     res.status(500).json({ error: 'Netease url failed' });
   }
@@ -516,13 +520,14 @@ app.get('/api/netease/url', async (req, res) => {
 app.get('/api/netease/audio', async (req, res) => {
   try {
     const id = String(req.query.id || '');
+    const bitrate = String(req.query.br || '');
     const cookie = readNeteaseCookie(req);
     if (!id) {
       res.status(400).json({ error: 'Missing id' });
       return;
     }
 
-    const playableUrl = await getNeteasePlayableUrl(id, cookie);
+    const playableUrl = await getNeteasePlayableUrl(id, cookie, bitrate);
     if (!playableUrl) {
       res.status(404).json({ error: 'No playable url for this song' });
       return;

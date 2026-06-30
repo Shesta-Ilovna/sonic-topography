@@ -1379,6 +1379,28 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
     loadNeteaseSong(queue[nextIndex], queue);
   };
 
+  const restoreLastPlayedLyrics = async (
+    song: NeteaseSong,
+    provider: CloudProvider,
+    requestCookie: string,
+    requestQQCookie: string,
+  ) => {
+    try {
+      const lyricResponse = provider === 'qq'
+        ? await fetch(`/api/qq/lyric?mid=${encodeURIComponent(song.mid || song.songmid || String(song.id))}&id=${encodeURIComponent(String(song.qqId || ''))}`, {
+            headers: createQQCookieHeaders(requestQQCookie),
+          })
+        : await fetch(`/api/netease/lyric?id=${song.id}`, {
+            headers: createNeteaseCookieHeaders(requestCookie),
+          });
+      const lyricData = await lyricResponse.json();
+      setLyricsText(lyricData.lyric || lyricData.translatedLyric || lyricData.tlyric || lyricData.qrc || '');
+    } catch (error) {
+      console.warn('Unable to restore last played lyrics:', error);
+      setLyricsText('');
+    }
+  };
+
   useEffect(() => {
     const handleEnded = () => {
       const queue = getCurrentQueue();
@@ -1404,6 +1426,9 @@ export function UI({ theme, resolvedTheme, customThemes, activeCustomThemeId, th
     setCurrentCover(last.cover || song.cover || '');
     // Pre-load the audio URL silently so the player bar shows the track
     const provider = song.provider || 'netease';
+    const requestCookie = provider === 'netease' && isNeteaseCookieValid ? neteaseCookie : '';
+    const requestQQCookie = provider === 'qq' && isQQCookieValid ? qqCookie : '';
+    restoreLastPlayedLyrics(song, provider, requestCookie, requestQQCookie);
     if (provider === 'qq') {
       const mid = song.mid || song.songmid || String(song.id);
       const mediaMid = song.mediaMid || '';

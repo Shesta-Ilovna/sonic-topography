@@ -1,4 +1,12 @@
 import { AudioData } from '../types';
+import {
+  createBeatDetectorState,
+  readBeatDetectorSettingsStorage,
+  stepBeatDetector,
+  writeBeatDetectorSettingsStorage,
+  normalizeBeatDetectorSettings,
+  type BeatDetectorSettings,
+} from './beatDetector';
 
 export type TriggerPreset = 'Auto Beat' | 'Advanced';
 
@@ -91,6 +99,9 @@ export class AudioEngine {
   private beatDecay = 0.95;
   private beatHoldTime = 20;
   private beatHold = 0;
+  private beatDetectorState = createBeatDetectorState();
+  private beatDetectorSettings = readBeatDetectorSettingsStorage();
+  private lastKickAnalysisTime = 0;
   
   // Legacy fields removed
 
@@ -122,6 +133,18 @@ export class AudioEngine {
       this.cachedFrameData = null;
       this.scheduleFrameCacheInvalidation();
     });
+  }
+
+  public getBeatDetectorSettings(): BeatDetectorSettings {
+    return { ...this.beatDetectorSettings };
+  }
+
+  public setBeatDetectorSettings(settings: Partial<BeatDetectorSettings>) {
+    this.beatDetectorSettings = normalizeBeatDetectorSettings({
+      ...this.beatDetectorSettings,
+      ...settings,
+    });
+    writeBeatDetectorSettingsStorage(this.beatDetectorSettings);
   }
 
   public init() {
@@ -231,7 +254,9 @@ export class AudioEngine {
   private smoothedData: AudioData = {
     bass: 0, mid: 0, treble: 0, energy: 0,
     subBass: 0, lowMid: 0, highMid: 0, presence: 0, brilliance: 0, air: 0,
-    warmth: 0, brightness: 0, sharpness: 0, smoothness: 0, density: 0, spectralCentroid: 0
+    warmth: 0, brightness: 0, sharpness: 0, smoothness: 0, density: 0, spectralCentroid: 0,
+    kickLevel: 0, kickFlux: 0, kickThreshold: 0, kickOnset: 0, kickEnvelope: 0,
+    kickConfidence: 0, kickWindowName: 'Classic', kickWindowStart: 1, kickWindowEnd: 4,
   };
 
   public pulseTrigger = new TriggerConfig('Pulse');
@@ -305,7 +330,7 @@ export class AudioEngine {
   }
 
   private evaluateTrigger(config: TriggerConfig, fluxScore: number) {
-      if (!config.enabled || !this.isPlaying) return;
+      if (!config.enabled || !this.isPlaying) return false;
       
       const binCount = this.dataArray.length;
       let eVal = 0;
@@ -327,8 +352,8 @@ export class AudioEngine {
                  triggered = true;
              }
           }
-          config.lastEvalEnergy = eVal;
-          if (triggered) {
+         config.lastEvalEnergy = eVal;
+         if (triggered) {
               if (this.onFreqTrigger) this.onFreqTrigger(eVal, 'Advanced', config.action);
               config.currentCooldown = 60; // 1s
           }
@@ -362,6 +387,7 @@ export class AudioEngine {
          } else if (isPeak && config.prevSmoothedFlux - config.smoothedFlux > 0.0001) {
             // Multiply by 30 (instead of 3) to compensate for the flux normalization by pulseBins, so it passes MapScene's 0.1 strength threshold
             if (this.onFreqTrigger) this.onFreqTrigger(config.prevSmoothedFlux * 30.0 * config.pulseStrength, 'Kick', config.action);
+            triggered = true;
             config.beatHold = config.cooldown;
          }
 
@@ -369,6 +395,8 @@ export class AudioEngine {
          config.lastEvalThresh = adaptiveThreshold * 10.0;
          config.prevSmoothedFlux = config.smoothedFlux;
       }
+
+      return triggered;
   }
 
   public getRawFrequencyData(): Uint8Array {
@@ -397,6 +425,11 @@ export class AudioEngine {
     let highMidSum = 0, presenceSum = 0, brillianceSum = 0, airSum = 0;
     let jumpVolatilitySum = 0;
     let fluxScore = 0;
+    const now = performance.now();
+    const kickDeltaSeconds = this.lastKickAnalysisTime > 0
+      ? Math.max(0, Math.min(0.25, (now - this.lastKickAnalysisTime) / 1000))
+      : 1 / 60;
+    this.lastKickAnalysisTime = now;
 
     const binCount = this.dataArray.length; // 512
 
@@ -406,7 +439,6 @@ export class AudioEngine {
       let fluxPulse = 0;
       let fluxMeteor = 0;
       let fluxSnare = 0;
-      const now = performance.now();
       if (this.isPlaying) {
           this.trackAutoPulse(this.dataArray, now);
       }
@@ -469,6 +501,14 @@ export class AudioEngine {
           this.prevData[i] = 0;
       }
     }
+
+    const beatDetectorOutput = stepBeatDetector({
+      state: this.beatDetectorState,
+      frequencyData: this.dataArray,
+      deltaSeconds: kickDeltaSeconds,
+      settings: this.beatDetectorSettings,
+    });
+    this.beatDetectorState = beatDetectorOutput.state;
 
     const energy = energySum / binCount;
     
@@ -536,6 +576,15 @@ export class AudioEngine {
     this.smoothedData.smoothness += (smoothnessVal - this.smoothedData.smoothness) * dt;
     this.smoothedData.density += (density - this.smoothedData.density) * dt;
     this.smoothedData.spectralCentroid += (spectralCentroid - this.smoothedData.spectralCentroid) * dt;
+    this.smoothedData.kickLevel = beatDetectorOutput.kickLevel;
+    this.smoothedData.kickFlux = beatDetectorOutput.kickFlux;
+    this.smoothedData.kickThreshold = beatDetectorOutput.kickThreshold;
+    this.smoothedData.kickOnset = beatDetectorOutput.kickOnset;
+    this.smoothedData.kickEnvelope = beatDetectorOutput.kickEnvelope;
+    this.smoothedData.kickConfidence = beatDetectorOutput.kickConfidence;
+    this.smoothedData.kickWindowName = beatDetectorOutput.activeWindow.name;
+    this.smoothedData.kickWindowStart = beatDetectorOutput.activeWindow.start;
+    this.smoothedData.kickWindowEnd = beatDetectorOutput.activeWindow.end;
 
     const snapshot = { ...this.smoothedData };
     this.cachedFrameData = snapshot;

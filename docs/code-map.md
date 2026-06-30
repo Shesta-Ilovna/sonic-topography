@@ -16,7 +16,7 @@ Last fully verified commit: `unknown`
 | Update checks and installer download | `server/update-service.mjs`, `src/lib/updateSource.ts`, `desktop/main.js`, `package.json` | `src/lib/updateSource.test.ts` | `npx tsx src/lib/updateSource.test.ts`, `npm run build:electron:dir` |
 | Preset import/export | `src/lib/presetTransfer.ts`, `src/components/UI/UI.tsx` | `src/lib/presetTransfer.test.ts` | `npx tsx src/lib/presetTransfer.test.ts`, `npm run lint` |
 | Theme colors, backdrop lock, and shader palette | `src/lib/themes.ts`, `src/lib/displaySettings.ts`, `src/App.tsx`, `src/components/UI/UI.tsx`, `src/components/AudioVisualizer/MapScene.tsx`, `src/components/AudioVisualizer/CustomShaderMaterial.ts` | `src/lib/themes.test.ts`, `src/lib/displaySettings.test.ts`, `src/lib/themeShader.test.ts`, `src/lib/presetTransfer.test.ts` | `npx tsx src/lib/themes.test.ts`, `npx tsx src/lib/displaySettings.test.ts`, `npx tsx src/lib/themeShader.test.ts`, `npm run build`, manual custom theme color check |
-| Audio analysis, ground effects mixer, terrain density, platter rotation, floating blocks, 3D terrain, factory camera, and 3D lyrics | `src/lib/AudioEngine.ts`, `src/lib/groundEqSettings.ts`, `src/lib/sceneDefaults.ts`, `src/lib/lyricsSettings.ts`, `src/lib/lyricLineWrapping.ts`, `src/lib/terrainResponse.ts`, `src/components/AudioVisualizer/MapScene.tsx`, `src/components/AudioVisualizer/SpatialLyrics3D.tsx`, `src/components/AudioVisualizer/CustomShaderMaterial.ts` | `src/lib/audioFrameCache.test.ts`, `src/lib/groundEqSettings.test.ts`, `src/lib/sceneDefaults.test.ts`, `src/lib/lyricsSettings.test.ts`, `src/lib/lyricLineWrapping.test.ts`, `src/lib/terrainResponse.test.ts`, `src/lib/presetTransfer.test.ts`, `src/lib/scenePlatterRotation.test.ts`, `src/lib/spatialLyricsScene.test.ts` | `npx tsx src/lib/audioFrameCache.test.ts`, `npx tsx src/lib/groundEqSettings.test.ts`, `npx tsx src/lib/sceneDefaults.test.ts`, `npx tsx src/lib/lyricsSettings.test.ts`, `npx tsx src/lib/lyricLineWrapping.test.ts`, `npx tsx src/lib/terrainResponse.test.ts`, `npx tsx src/lib/presetTransfer.test.ts`, `npx tsx src/lib/scenePlatterRotation.test.ts`, `npx tsx src/lib/spatialLyricsScene.test.ts`, `npm run lint`, `npm run build`, manual playback in Electron/browser |
+| Audio analysis, realtime kick detector, audio debugger, ground effects mixer, terrain density, platter rotation, floating blocks, 3D terrain, factory camera, and 3D lyrics | `src/lib/AudioEngine.ts`, `src/lib/beatDetector.ts`, `src/lib/kickEnvelope.ts`, `src/components/AudioDebugger/AudioDebugger.tsx`, `src/lib/groundEqSettings.ts`, `src/lib/sceneDefaults.ts`, `src/lib/lyricsSettings.ts`, `src/lib/lyricLineWrapping.ts`, `src/lib/terrainResponse.ts`, `src/components/AudioVisualizer/MapScene.tsx`, `src/components/AudioVisualizer/SpatialLyrics3D.tsx`, `src/components/AudioVisualizer/CustomShaderMaterial.ts` | `src/lib/audioFrameCache.test.ts`, `src/lib/beatDetector.test.ts`, `src/lib/kickEnvelope.test.ts`, `src/lib/groundEqSettings.test.ts`, `src/lib/sceneDefaults.test.ts`, `src/lib/lyricsSettings.test.ts`, `src/lib/lyricLineWrapping.test.ts`, `src/lib/terrainResponse.test.ts`, `src/lib/presetTransfer.test.ts`, `src/lib/scenePlatterRotation.test.ts`, `src/lib/spatialLyricsScene.test.ts` | `npx tsx src/lib/audioFrameCache.test.ts`, `npx tsx src/lib/beatDetector.test.ts`, `npx tsx src/lib/kickEnvelope.test.ts`, `npx tsx src/lib/groundEqSettings.test.ts`, `npx tsx src/lib/sceneDefaults.test.ts`, `npx tsx src/lib/lyricsSettings.test.ts`, `npx tsx src/lib/lyricLineWrapping.test.ts`, `npx tsx src/lib/terrainResponse.test.ts`, `npx tsx src/lib/presetTransfer.test.ts`, `npx tsx src/lib/scenePlatterRotation.test.ts`, `npx tsx src/lib/spatialLyricsScene.test.ts`, `npm run lint`, `npm run build`, manual Debugger playback in Electron/browser |
 
 ## End-To-End Flow
 
@@ -65,6 +65,15 @@ Search panel chooses effectiveSearchProvider
 -> MapScene reads AudioEngine.getAudioData()
 -> visualPlatter group auto-rotates terrain/effects while OrbitControls keeps manual camera orbit available
 -> SpatialLyrics3D renders spatial-wall lyrics outside visualPlatter so it behaves like a fixed far screen
+```
+
+```text
+Last-played cloud restore on startup
+-> UI reads sonic_topography_last_played through readLastPlayedStorage()
+-> restores current song, queue, cover, and player title without autoplay
+-> preloads /api/netease/audio or /api/qq/audio through AudioEngine.loadUrl()
+-> fetches /api/netease/lyric or /api/qq/lyric for the same restored song
+-> setLyricsText() drives App.currentLyricsText and MapScene/SpatialLyrics3D
 ```
 
 ## Code Map
@@ -132,7 +141,19 @@ QQ playback defaults to `exhigh` / 320k MP3. Do not default to Hi-Res FLAC; QQ c
 
 `src/lib/AudioEngine.ts`
 
-Web Audio playback and frequency analysis. Splits audio into sub-bass, bass, low-mid, mid, high-mid, presence, brilliance, and air bands. `getAudioData()` caches one analysis snapshot per animation frame so multiple readers do not repeat analyser scans or advance trigger state twice in the same frame.
+Web Audio playback and frequency analysis. Splits audio into sub-bass, bass, low-mid, mid, high-mid, presence, brilliance, and air bands. `getAudioData()` caches one analysis snapshot per animation frame so multiple readers do not repeat analyser scans or advance trigger state twice in the same frame. It also calls `beatDetector.ts` once per FFT frame and exposes `kickLevel`, `kickFlux`, `kickThreshold`, `kickOnset`, `kickEnvelope`, `kickConfidence`, and active kick-window fields for beat-led terrain motion and the Debugger. `getBeatDetectorSettings()` / `setBeatDetectorSettings()` expose the realtime detector sensitivity setting and persist it through `beatDetector.ts` storage helpers.
+
+`src/lib/beatDetector.ts`
+
+Low-cost realtime kick detector. Reuses the existing FFT bins, scores fixed candidate kick windows (`Deep`, `Classic`, `Punch`, `Wide`), detects spectral-flux local peaks against an adaptive threshold, applies cooldown, and returns Debugger-friendly values plus a visual `kickEnvelope`. It owns `BeatDetectorSettings` normalization, threshold parameter mapping, and localStorage persistence under `sonic-topography-beat-detector-v1`; first-launch sensitivity defaults to `100` / Sensitive, `50` preserves the earlier midpoint tuning, lower values make detection stricter, and higher values make weak kicks easier to trigger. Update `src/lib/beatDetector.test.ts` for settings clamps/storage fallback, silence, sustained bass, transient kicks, cooldown, candidate-window selection, beat lamp, and timeline behavior.
+
+`src/lib/kickEnvelope.ts`
+
+Realtime kick-channel helper. Converts the currently tracked kick-bin loudness plus Auto Beat onset events into a low-cost visual envelope: onset produces a fast lift, sustained bass contributes only a small breathing floor, and the envelope releases over a short musical decay. Update `src/lib/kickEnvelope.test.ts` when changing noise-floor, onset, or release behavior.
+
+`src/components/AudioDebugger/AudioDebugger.tsx`
+
+Audio debugging overlay. Shows the FFT spectrum and band levels, then a Kick Monitor with active detector window, confidence, Level / Flux / Threshold / Envelope meters, a Strict/Sensitive detector sensitivity slider, a high-contrast BEAT lamp, and a recent beat timeline. Use this panel to verify the detector directly before judging terrain response: drag toward Sensitive for weak kicks, toward Strict when sustained bass causes false positives, and confirm the value survives closing/reopening through localStorage.
 
 `src/lib/metadata.ts`
 
@@ -164,11 +185,11 @@ Terrain shader. Low frequencies change elevation; high frequencies mostly affect
 
 `src/lib/groundEqSettings.ts`
 
-Ground effects mixer storage, normalization, legacy curve migration, per-band sensitivity scaling, terrain density, floating kick blocks, and the global ground motion speed value. First-launch defaults are captured from the tuned Electron profile: bands `[50, 50, 50, 50, 50, 50, 50, 48]`, terrain density `46`, floating intensity `55`, min size `9`, max size `26`, and speed `77`. The model is 8 independent band values plus `motionSpeed`, `amplitude`, `terrainDensity`, `floatingBlocksEnabled`, `floatingBlockIntensity`, `floatingBlockMinSize`, `floatingBlockMaxSize`, and `floatingBlockSpeed`, not a 16-point curve. `deriveTerrainGridSettings()` maps density `0..100` to the instanced terrain grid: about `96 x 96`, `160 x 160`, or `224 x 224` blocks while keeping the world footprint stable. The UI exposes the bands as mixer faders for sub-bass, bass, low-mid, mid, high-mid, presence, brilliance, and air, with separate option tabs for ground EQ and floating block controls.
+Ground effects mixer storage, normalization, legacy curve migration, per-band sensitivity scaling, terrain density, floating kick blocks, and the global ground motion speed value. First-launch defaults are captured from the tuned Electron profile: bands `[90, 92, 50, 50, 50, 50, 50, 48]`, terrain density `46`, floating intensity `55`, min size `9`, max size `26`, and speed `77`. The first two defaults are intentionally high because they scale beat-led center lift and low-frequency weight on top of a smaller raw low-frequency base layer. The model is 8 independent band values plus `motionSpeed`, `amplitude`, `terrainDensity`, `floatingBlocksEnabled`, `floatingBlockIntensity`, `floatingBlockMinSize`, `floatingBlockMaxSize`, and `floatingBlockSpeed`, not a 16-point curve. `deriveTerrainGridSettings()` maps density `0..100` to the instanced terrain grid: about `96 x 96`, `160 x 160`, or `224 x 224` blocks while keeping the world footprint stable. The UI exposes the bands as mixer faders for sub-bass, bass, low-mid, mid, high-mid, presence, brilliance, and air, with separate option tabs for ground EQ and floating block controls.
 
 `src/lib/terrainResponse.ts`
 
-Terrain response safety helpers used by `MapScene`. Clamps frame-delta animation blends, kick deformation impulses, and the final low-frequency shader uniforms so transient kick events or delayed frames cannot make the terrain jump violently for a few frames.
+Terrain response safety helpers used by `MapScene`. Clamps frame-delta animation blends, kick deformation impulses, and the final low-frequency shader uniforms so transient kick events or delayed frames cannot make the terrain jump violently for a few frames. The first two ground EQ controls, `subBass` / center lift and `bass` / low-frequency weight, intentionally mix a small base layer from `AudioEngine.getAudioData().subBass` / `bass` with a stronger `kickEnvelope` beat layer; use `deriveKickFollowLowBands()` when changing that path so slider scaling, enable switches, beat-response gain, raw-bass base gain, and shader clamps stay together.
 
 ### Theme Colors
 
@@ -219,7 +240,9 @@ On this Windows workspace, Electron Builder can fail with `EPERM` while renaming
 | `src/lib/neteasePlaylist.test.ts` | Netease playlist `trackIds` completeness, track detail merging, playlist limit parsing |
 | `src/lib/playbackQuality.test.ts` | Playback quality defaults, normalization, localStorage persistence, QQ/Netease playback URL parameters |
 | `src/lib/neteasePlayback.test.ts` | Netease playback bitrate normalization, upstream player URL construction, playable URL cache key bitrate separation |
-| `src/lib/audioFrameCache.test.ts` | AudioEngine single-frame analysis cache and analyser read deduplication |
+| `src/lib/audioFrameCache.test.ts` | AudioEngine single-frame analysis cache, analyser read deduplication, and default detector fields |
+| `src/lib/beatDetector.test.ts` | Realtime kick detector behavior: silence, sustained bass, transient kicks, cooldown, active window selection, beat lamp, and beat timeline |
+| `src/lib/kickEnvelope.test.ts` | Realtime kick envelope behavior: silence, sustained-bass breathing, onset lift, and release |
 | `src/lib/terrainResponse.test.ts` | Terrain response clamps for delayed-frame interpolation, kick impulse bounds, and low-frequency shader uniform limits |
 | `src/lib/themes.test.ts` | Custom theme normalization, legacy rear-backdrop defaults, and independent backdrop color mapping |
 | `src/lib/displaySettings.test.ts` | First-launch display setting defaults such as icon/player visibility and clock color |
@@ -279,11 +302,12 @@ On this Windows workspace, Electron Builder can fail with `EPERM` while renaming
 2. Update `src/components/UI/UI.tsx` for the mixer UI.
 3. Update `src/components/AudioVisualizer/MapScene.tsx` for band-to-shader mapping or terrain instance sizing.
 4. If the stored model changes, update preset import/export normalization in `src/lib/presetTransfer.ts` tests.
-5. Keep exactly 8 direct frequency controls unless `AudioEngine` and `CustomShaderMaterial` add more direct frequency uniforms. Global `motionSpeed` controls terrain response smoothing only.
-6. If changing frame smoothing, kick deformation, or final shader uniform bounds, update `src/lib/terrainResponse.ts` and `src/lib/terrainResponse.test.ts`.
+5. Keep exactly 8 controls unless `AudioEngine` and `CustomShaderMaterial` add more direct terrain inputs. The first two controls tune a mixed response: a smaller continuous low-frequency base from `subBass` / `bass` plus a stronger `kickEnvelope` beat layer from `beatDetector.ts`; the remaining six controls follow real-time frequency bands. Global `motionSpeed` controls terrain response smoothing only.
+6. If changing frame smoothing, kick deformation, beat-response gain, or final shader uniform bounds, update `src/lib/terrainResponse.ts` and `src/lib/terrainResponse.test.ts`.
 7. If changing density, verify low density uses larger/fewer blocks, high density uses smaller/more blocks, and the terrain footprint does not visibly shrink or expand.
 8. If changing floating blocks, verify the option tab appears directly after Meteor, enabled blocks hover above the terrain, min/max size and speed controls change the kick scaling visibly, disabled blocks hide, and meteors/click ripples still work.
-9. Run `npx tsx src/lib/groundEqSettings.test.ts`, `npx tsx src/lib/terrainResponse.test.ts`, `npx tsx src/lib/presetTransfer.test.ts`, `npm run lint`, and `npm run build`.
+9. If changing beat-led motion, detector sensitivity, or envelope release speed, verify the Debugger BEAT lamp and timeline first, drag the Kick Monitor slider toward both Strict and Sensitive, then confirm terrain and floating blocks follow `kickEnvelope` with the intended decay.
+10. Run `npx tsx src/lib/beatDetector.test.ts`, `npx tsx src/lib/kickEnvelope.test.ts`, `npx tsx src/lib/groundEqSettings.test.ts`, `npx tsx src/lib/terrainResponse.test.ts`, `npx tsx src/lib/presetTransfer.test.ts`, `npm run lint`, and `npm run build`.
 
 ### Change Scene Rotation
 
@@ -304,9 +328,10 @@ On this Windows workspace, Electron Builder can fail with `EPERM` while renaming
 2. Update shared wrapping in `src/lib/lyricLineWrapping.ts` if changing per-line capacity behavior.
 3. Update settings UI in `src/components/UI/UI.tsx`.
 4. Keep current lyric text flowing from `UI` to `App` to `MapScene`; do not read lyrics from `currentSong` unless that model explicitly stores lyrics.
-5. Keep `SpatialLyrics3D` outside `visualPlatter` in `MapScene` so the terrain rotates but the lyric wall behaves like a fixed far screen.
-6. Verify LRC parsing with `parseLRC()`, canvas texture creation in `SpatialLyrics3D`, first-line timing before the first timestamp, the lyric visibility toggle path for all styles, per-line capacity and font-size response in all three styles, spatial-wall width changes at capacities such as 16/24/32/48, spatial-wall orbit offsets at -180/0/180 degrees, and a real browser/Electron playback path with the changed style selected.
-7. Run `npx tsx src/lib/lyricsSettings.test.ts`, `npx tsx src/lib/lyricLineWrapping.test.ts`, `npx tsx src/lib/spatialLyricsScene.test.ts`, `npx tsx src/lib/scenePlatterRotation.test.ts`, `npm run lint`, and `npm run build`.
+5. For last-played cloud restore, keep the silent audio preload and lyric fetch together in `src/components/UI/UI.tsx`; restoring title/cover without `setLyricsText()` leaves `App.currentLyricsText` empty after restart.
+6. Keep `SpatialLyrics3D` outside `visualPlatter` in `MapScene` so the terrain rotates but the lyric wall behaves like a fixed far screen.
+7. Verify LRC parsing with `parseLRC()`, canvas texture creation in `SpatialLyrics3D`, first-line timing before the first timestamp, the lyric visibility toggle path for all styles, per-line capacity and font-size response in all three styles, spatial-wall width changes at capacities such as 16/24/32/48, spatial-wall orbit offsets at -180/0/180 degrees, restart/restore of the last cloud song with lyrics present, and a real browser/Electron playback path with the changed style selected.
+8. Run `npx tsx src/lib/lyricsSettings.test.ts`, `npx tsx src/lib/lyricLineWrapping.test.ts`, `npx tsx src/lib/spatialLyricsScene.test.ts`, `npx tsx src/lib/scenePlatterRotation.test.ts`, `npm run lint`, and `npm run build`.
 
 ## Local Verification Commands
 
@@ -315,7 +340,9 @@ npx tsx src/lib/neteasePlaylist.test.ts
 npx tsx src/lib/playbackQuality.test.ts
 npx tsx src/lib/neteasePlayback.test.ts
 npx tsx src/lib/audioFrameCache.test.ts
+npx tsx src/lib/beatDetector.test.ts
 npx tsx src/lib/terrainResponse.test.ts
+npx tsx src/lib/kickEnvelope.test.ts
 npx tsx src/lib/themes.test.ts
 npx tsx src/lib/displaySettings.test.ts
 npx tsx src/lib/themeShader.test.ts

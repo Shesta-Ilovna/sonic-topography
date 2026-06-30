@@ -19,7 +19,7 @@ import {
 const defaults = normalizeGroundEqSettings(undefined);
 assert.equal(defaults.bands.length, GROUND_EQ_BAND_COUNT);
 assert.deepEqual(defaults.bands, defaultGroundEqBands);
-assert.deepEqual(defaults.bands, [50, 50, 50, 50, 50, 50, 50, 48]);
+assert.deepEqual(defaults.bands, [90, 92, 50, 50, 50, 50, 50, 48]);
 assert.equal(defaults.motionSpeed, DEFAULT_GROUND_MOTION_SPEED);
 assert.equal(defaults.amplitude, 50);
 assert.equal(defaults.terrainDensity, DEFAULT_TERRAIN_DENSITY);

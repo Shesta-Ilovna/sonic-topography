@@ -19,7 +19,7 @@ import {
   readGroundEqSettingsStorage,
   type StoredGroundEqSettings,
 } from '../../lib/groundEqSettings';
-import { applyKickImpulse, clampAnimationBlend, mixKickIntoLowBands, stepKickDeform } from '../../lib/terrainResponse';
+import { clampAnimationBlend, deriveKickFollowLowBands } from '../../lib/terrainResponse';
 import { COVER_SCREEN_POSITION, COVER_SCREEN_ROTATION, SpatialLyrics3D } from './SpatialLyrics3D';
 import { type LyricsSettings } from '../../lib/lyricsSettings';
 import { CAMERA_STATE_STORAGE_KEY, DEFAULT_CAMERA_STATE, normalizeCameraState } from '../../lib/sceneDefaults';
@@ -106,8 +106,6 @@ export function MapScene({
     brilliance: 0,
     air: 0,
   });
-  const kickDeformRef = useRef<number>(0);
-  const kickDeformTargetRef = useRef<number>(0);
   const floatingBlockPulseRef = useRef<number>(0);
   
   const floatingBlockCount = groundEqSettings.floatingBlockCount ?? DEFAULT_FLOATING_BLOCK_COUNT;
@@ -353,8 +351,6 @@ export function MapScene({
              const rz = Math.sin(angle) * dist;
              // Kick produces a colored wave, limit max strength to avoid massive glitches
              addRipple(rx, rz, Math.min(strength * 2.0, 3.0), false);
-             
-             kickDeformTargetRef.current = applyKickImpulse(kickDeformTargetRef.current, strength);
           } 
           else {
              const dist = 10 + Math.random() * 25; 
@@ -382,8 +378,15 @@ export function MapScene({
     const amplitude = Math.max(0, Math.min(100, groundEqSettings.amplitude ?? 50));
     const responseRate = THREE.MathUtils.lerp(2.2, 60, motionSpeed / 100);
     const responseBlend = clampAnimationBlend(1 - Math.exp(-responseRate * delta));
-    const targetEqSubBass = enabledBands[0] ? applyGroundEqBandValue(data.subBass, eqBands, 'subBass') : 0;
-    const targetEqBass = enabledBands[1] ? applyGroundEqBandValue(data.bass, eqBands, 'bass') : 0;
+    const kickLowBands = deriveKickFollowLowBands({
+      kickEnvelope: data.kickEnvelope,
+      subBassEnergy: data.subBass,
+      bassEnergy: data.bass,
+      bands: eqBands,
+      enabledBands,
+    });
+    const targetEqSubBass = kickLowBands.subBass;
+    const targetEqBass = kickLowBands.bass;
     const targetEqLowMid = enabledBands[2] ? applyGroundEqBandValue(data.lowMid, eqBands, 'lowMid') : 0;
     const targetEqMid = enabledBands[3] ? applyGroundEqBandValue(data.mid, eqBands, 'mid') : 0;
     const targetEqHighMid = enabledBands[4] ? applyGroundEqBandValue(data.highMid, eqBands, 'highMid') : 0;
@@ -441,21 +444,8 @@ export function MapScene({
     mat.uEnergy = eqEnergy;
     mat.uAmplitude = amplitudeMultiplier;
     
-    const nextKick = stepKickDeform({
-      current: kickDeformRef.current,
-      target: kickDeformTargetRef.current,
-      delta,
-    });
-    kickDeformRef.current = nextKick.current;
-    kickDeformTargetRef.current = nextKick.target;
-
-    const lowBands = mixKickIntoLowBands({
-      subBass: eqSubBass,
-      bass: eqBass,
-      kickDeform: kickDeformRef.current,
-    });
-    mat.uSubBass = lowBands.subBass;
-    mat.uBass = lowBands.bass;
+    mat.uSubBass = eqSubBass;
+    mat.uBass = eqBass;
     
     mat.uLowMid = eqLowMid;
     mat.uHighMid = eqHighMid;
@@ -476,7 +466,7 @@ export function MapScene({
     if (floatingBlockMeshRef.current) {
       const enabledScale = floatingBlocksEnabled ? 1 : 0;
       const intensity = floatingBlockIntensity / 100;
-      const rawPulse = Math.max(kickDeformRef.current / 0.75, Math.max(eqSubBass, eqBass) * 0.45);
+      const rawPulse = Math.max(0, Math.min(1, data.kickEnvelope));
       const speedRate = THREE.MathUtils.lerp(3.0, 36.0, floatingBlockSpeed / 100);
       const pulseBlend = clampAnimationBlend(1 - Math.exp(-speedRate * delta));
       floatingBlockPulseRef.current = THREE.MathUtils.lerp(floatingBlockPulseRef.current, rawPulse, pulseBlend);

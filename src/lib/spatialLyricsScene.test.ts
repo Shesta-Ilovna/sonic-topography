@@ -21,6 +21,9 @@ assert.match(uiSource, /onCurrentLyricsChange\?: \(lyrics: string\) => void/);
 assert.match(uiSource, /onLyricsVisibilityChange\?: \(visible: boolean\) => void/);
 assert.match(uiSource, /onCurrentLyricsChange\?\.\(lyricsText\)/);
 assert.match(uiSource, /onLyricsVisibilityChange\?\.\(displaySettings\.showLyrics\)/);
+assert.match(uiSource, /restoreLastPlayedLyrics/);
+assert.match(uiSource, /setLyricsText\(lyricData\.lyric \|\| lyricData\.translatedLyric \|\| lyricData\.tlyric \|\| lyricData\.qrc \|\| ''\)/);
+assert.match(uiSource, /restoreLastPlayedLyrics\(song, provider, requestCookie, requestQQCookie\)/);
 
 const platterGroupIndex = mapSceneSource.indexOf('<group ref={visualPlatterRef}>');
 const platterGroupEndIndex = mapSceneSource.indexOf('\n      </group>', platterGroupIndex);

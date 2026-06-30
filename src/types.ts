@@ -20,6 +20,17 @@ export interface AudioData {
   smoothness: number;
   density: number;
   spectralCentroid: number;
+
+  // Realtime kick channel for beat-led terrain motion.
+  kickLevel: number;
+  kickFlux: number;
+  kickThreshold: number;
+  kickOnset: number;
+  kickEnvelope: number;
+  kickConfidence: number;
+  kickWindowName: string;
+  kickWindowStart: number;
+  kickWindowEnd: number;
 }
 
 export interface RippleEvent {

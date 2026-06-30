@@ -260,7 +260,8 @@ const DynamicBounceLyrics: React.FC<{
        if (activeTextRef.current && engine.audioElement) {
           // 1. Bounce effect
           const data = engine.getAudioData();
-          const energy = data[lyricsSettings.triggerBand as keyof typeof data] || 0;
+          const rawEnergy = data[lyricsSettings.triggerBand as keyof typeof data];
+          const energy = typeof rawEnergy === 'number' ? rawEnergy : 0;
           const scale = 1.0 + (energy * 0.12);
           activeTextRef.current.style.transform = `scale(${scale})`;
 

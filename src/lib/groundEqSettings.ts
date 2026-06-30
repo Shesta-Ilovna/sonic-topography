@@ -50,7 +50,7 @@ export const GROUND_EQ_BAND_IDS: GroundEqBandId[] = [
   'air',
 ];
 
-export const defaultGroundEqBands = [50, 50, 50, 50, 50, 50, 50, 48];
+export const defaultGroundEqBands = [90, 92, 50, 50, 50, 50, 50, 48];
 
 const LEGACY_CURVE_BAND_INDEXES = [0, 2, 4, 6, 8, 11, 12, 15];
 
